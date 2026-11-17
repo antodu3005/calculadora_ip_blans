@@ -128,17 +128,22 @@ document.addEventListener("DOMContentLoaded", () => {
         return nodoSeleccionadoIndex !== null ? (listaNodos[nodoSeleccionadoIndex] || null) : null;
     }
 
-    function invalidarScript(nodo) {
+    // Invalida selectivamente Router o Switch para no perder el otro script del nodo
+    function invalidarScript(nodo, tipo = "ambos") {
         if (!nodo) return;
-        nodo.scriptGenerado = null;
-        nodo.scriptRouter = null;
-        nodo.scriptSwitch = null;
-        nodo.auditoriaLogs = [];
-        terminalRouter.textContent = TEXTO_TERMINAL_VACIO;
-        terminalSwitch.textContent = TEXTO_SWITCH_VACIO;
-        btnListoRouter.style.display = "none";
-        btnListoSwitch.style.display = "none";
-        panelAuditoria.style.display = "none";
+        if (tipo === "router" || tipo === "ambos") {
+            nodo.scriptGenerado = null;
+            nodo.scriptRouter = null;
+            nodo.auditoriaLogs = [];
+            terminalRouter.textContent = TEXTO_TERMINAL_VACIO;
+            btnListoRouter.style.display = "none";
+            panelAuditoria.style.display = "none";
+        }
+        if (tipo === "switch" || tipo === "ambos") {
+            nodo.scriptSwitch = null;
+            terminalSwitch.textContent = TEXTO_SWITCH_VACIO;
+            btnListoSwitch.style.display = "none";
+        }
     }
 
     function guardEdit() {
@@ -167,8 +172,6 @@ document.addEventListener("DOMContentLoaded", () => {
         vlanCheckNativa.checked = false;
     }
 
-    // Expande correctamente nombres cortos (f0/1, fa0/1, g0/1/0, s0/1/0, lo0) y rangos (fa0/2-10)
-    // Si es para Switch (forzarInicioEnUno = true), corrige cualquier /0 a /1 para evitar % Invalid input detected
     function formatearInterfazCisco(nombreRaw, forzarInicioEnUno = false) {
         let limpio = String(nombreRaw || "").trim().toLowerCase().replace(/\s+/g, "");
         let prefijo = "";
@@ -200,7 +203,6 @@ document.addEventListener("DOMContentLoaded", () => {
         return /\/0(?:-|$)/.test(limpio);
     }
 
-    // Nombre canónico: g0/0, gi0/0 y gig0/0 son la MISMA interfaz (evita duplicados)
     function canonIntf(raw) {
         const l = String(raw || "").trim().toLowerCase().replace(/\s+/g, "");
         const m = l.match(/^(fa|f|gi|gig|g|se|s|lo)(\d.*)$/);
@@ -210,14 +212,12 @@ document.addEventListener("DOMContentLoaded", () => {
         return pref + m[2];
     }
 
-    // Descompone "fa0/2-10" -> { base: "fa0/", ini: 2, fin: 10 }
     function parsearRangoPuerto(nombre) {
         const m = String(nombre).match(/^([a-z]+\d+(?:\/\d+)*\/)(\d+)(?:-(\d+))?$/);
         if (!m) return null;
         return { base: m[1], ini: Number(m[2]), fin: m[3] !== undefined ? Number(m[3]) : Number(m[2]) };
     }
 
-    // Nombre de VLAN válido en IOS: sin acentos ni símbolos, máx. 32 caracteres
     function nombreVlanCisco(cliente, id) {
         const s = String(cliente || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
             .trim().replace(/\s+/g, "_").replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 32);
@@ -230,16 +230,16 @@ document.addEventListener("DOMContentLoaded", () => {
         const exito = () => {
             if (btnElement && claseBase && claseExito) {
                 btnElement.textContent = "¡Copiado!";
-                try {
+                if (btnElement.classList.contains(claseBase)) {
                     btnElement.classList.replace(claseBase, claseExito);
-                } catch (e) {
+                } else {
                     btnElement.classList.add(claseExito);
                 }
                 setTimeout(() => {
                     btnElement.textContent = textoOriginal;
-                    try {
+                    if (btnElement.classList.contains(claseExito)) {
                         btnElement.classList.replace(claseExito, claseBase);
-                    } catch (e) {
+                    } else {
                         btnElement.classList.remove(claseExito);
                     }
                 }, 2000);
@@ -410,8 +410,9 @@ document.addEventListener("DOMContentLoaded", () => {
         const wildcardOctetos = maskOctetos.map(m => 255 - m);
         const redOctetos = calcularRed(ipOctetos, maskOctetos);
         const broadcastOctetos = calcularBroadcast(redOctetos, wildcardOctetos);
+        const redBaseStr = redOctetos.join('.');
 
-        if (ipOctetos.join('.') === redOctetos.join('.')) {
+        if (ipOctetos.join('.') === redBaseStr) {
             let hostMinOctetos = [], hostMaxOctetos = [], numHosts = 0;
 
             if (cidr === 32) {
@@ -571,9 +572,22 @@ document.addEventListener("DOMContentLoaded", () => {
         } else {
             mostrarMensaje(
                 contenedor,
-                `${htmlAdicional}<h5 class="alert-heading mt-2">Dirección Inválida</h5><p>La dirección <strong>${esc(ipValue)}/${cidr}</strong> contiene bits de host activos.</p><hr><p class="mb-0">Dirección de red base correcta: <strong>${redOctetos.join('.')}</strong></p>`,
+                `${htmlAdicional}
+                <h5 class="alert-heading mt-2">Dirección Inválida</h5>
+                <p>La dirección <strong>${esc(ipValue)}/${cidr}</strong> contiene bits de host activos.</p>
+                <hr>
+                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+                    <p class="mb-0">Dirección de red base correcta: <strong>${redBaseStr}/${cidr}</strong></p>
+                    <button type="button" class="btn btn-sm btn-danger fw-bold btn-usar-red-base">⚡ Calcular usando ${redBaseStr}/${cidr}</button>
+                </div>`,
                 "danger"
             );
+            const btnBase = contenedor.querySelector('.btn-usar-red-base');
+            if (btnBase) {
+                btnBase.addEventListener('click', () => {
+                    procesarCalculoIP(redBaseStr, String(cidr), contenedor, htmlAdicional);
+                });
+            }
         }
     }
 
@@ -594,7 +608,9 @@ document.addEventListener("DOMContentLoaded", () => {
             nodoMaskInt = ipToInt(nodo.mascara.split('.').map(Number));
         }
 
-        const intfsL3 = nodo.interfaces.filter(i => !i.mode || i.mode === 'none');
+        // Excluir puertos físicos que actúan únicamente como puerto padre (sin IP) para subinterfaces dot1Q
+        const padresDot1q = new Set((nodo.vlansHabilitado ? nodo.vlans : []).map(v => v.intf));
+        const intfsL3 = nodo.interfaces.filter(i => (!i.mode || i.mode === 'none') && !(padresDot1q.has(i.nombre) && !i.ip));
 
         if (intfsL3.length === 0 && (!nodo.vlansHabilitado || nodo.vlans.length === 0)) {
             logs.push({ tipo: 'warning', texto: `El router no tiene interfaces físicas L3 ni subinterfaces VLAN configuradas.` });
@@ -668,7 +684,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (ids.length > 1) logs.push({ tipo: 'danger', texto: `${padre.toUpperCase()}: más de una subinterfaz 'native' (VLAN ${ids.join(', ')}). Solo puede haber una.` });
             });
             [...new Set(nodo.vlans.map(v => v.intf))].forEach(padre => {
-                const conIp = intfsL3.find(i => i.nombre === padre && i.ip);
+                const conIp = nodo.interfaces.find(i => (!i.mode || i.mode === 'none') && i.nombre === padre && i.ip);
                 if (conIp) logs.push({ tipo: 'warning', texto: `${padre.toUpperCase()} tiene IP ${conIp.ip} y además es puerto padre de subinterfaces dot1Q. En router-on-a-stick el puerto físico no debe llevar IP.` });
             });
             nodo.vlans.forEach(v => {
@@ -798,7 +814,7 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         }
 
-        // Auditoría OSPF (Considerando Interfaces L3 y Subinterfaces encapsulation dot1Q)
+        // Auditoría OSPF
         if (nodo.ospfHabilitado) {
             const pidTexto = String(nodo.ospfProcessId ?? "");
             const pidNum = parseInt(pidTexto, 10);
@@ -828,7 +844,6 @@ document.addEventListener("DOMContentLoaded", () => {
                     }
                 });
 
-                // Verificar si existen subinterfaces encapsulation dot1Q que olvidaron anunciarse en OSPF
                 const subintfsDot1q = redesInterfaces.filter(r => r.esDot1q);
                 subintfsDot1q.forEach(sub => {
                     const cubiertaEnOspf = nodo.ospfNetworks.some(o => {
@@ -921,6 +936,8 @@ document.addEventListener("DOMContentLoaded", () => {
         seccionConfiguracion.style.display = "flex";
         tituloConfiguracion.innerHTML = `Gestión de Interfaces: <span class="text-dark border-bottom border-2 border-primary">${esc(nodo.cliente)} (VLAN ${esc(nodo.vlanId)})</span>`;
 
+        const padresDot1q = new Set((nodo.vlansHabilitado ? nodo.vlans : []).map(v => v.intf));
+
         if (nodo.interfaces.length === 0) {
             listaInterfaces.innerHTML = `<li class="list-group-item text-center text-muted fst-italic py-3">No hay interfaces conectadas.</li>`;
         } else {
@@ -967,17 +984,20 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
 
                 const esSerial = intf.nombre.toLowerCase().startsWith('s');
+                const esPadreDot1qSinIp = !intf.mode && !intf.ip && padresDot1q.has(intf.nombre);
                 const modeBadge = intf.mode === 'access'
                     ? `<span class="badge bg-info text-dark ms-2">SWITCH ACCESS (VLAN ${esc(nodo.vlanId)})</span>`
-                    : (intf.mode === 'trunk' ? `<span class="badge bg-warning text-dark ms-2">SWITCH TRUNK</span>` : '');
+                    : (intf.mode === 'trunk' ? `<span class="badge bg-warning text-dark ms-2">SWITCH TRUNK</span>` : (esPadreDot1qSinIp ? `<span class="badge bg-success ms-2">PADRE dot1Q (Trunk L3)</span>` : ''));
                 const clockBadge = (esSerial && intf.clockRate) ? `<span class="badge bg-warning text-dark ms-2 border border-secondary" style="font-size: 0.65rem;">⏱ CLOCK: ${esc(intf.clockRateValue)}</span>` : '';
                 const helperBadge = intf.helper ? `<span class="badge bg-info text-dark ms-2 border border-secondary" style="font-size: 0.65rem;">HELPER: ${esc(intf.helper)}</span>` : '';
-                
+
                 const estadoConfig = (intf.ip && intf.mascara)
                     ? `<div class="text-muted font-monospace mt-1" style="font-size: 0.85rem;">IP: <span class="text-dark fw-bold">${esc(intf.ip)}</span> | Mask: <span class="text-dark fw-bold">${esc(intf.mascara)}</span></div>`
                     : (intf.mode
                         ? `<div class="text-success fst-italic mt-1" style="font-size: 0.80rem;">✔ Puerto Capa 2 listo para Switch (${esc(formatearInterfazCisco(intf.nombre, true))})</div>`
-                        : `<div class="text-danger fst-italic mt-1" style="font-size: 0.80rem;">⚠️ Falta configurar IP y máscara</div>`);
+                        : (esPadreDot1qSinIp
+                            ? `<div class="text-success fst-italic mt-1" style="font-size: 0.80rem;">✔ Puerto físico padre para subinterfaces dot1Q (sin IP en interfaz física)</div>`
+                            : `<div class="text-danger fst-italic mt-1" style="font-size: 0.80rem;">⚠️ Falta configurar IP y máscara (o asignarle subinterfaces dot1Q)</div>`));
 
                 return `
                 <li class="list-group-item d-flex justify-content-between align-items-center py-2 px-3 mb-2 border rounded shadow-sm">
@@ -1038,7 +1058,6 @@ document.addEventListener("DOMContentLoaded", () => {
         const modoNuevo = mode === 'none' ? null : mode;
         const conflicto = nodo.interfaces.find(intf => {
             const modoExistente = intf.mode || null;
-            // Router (L3) y Switch (L2) son equipos distintos: solo chocan entre iguales
             if ((modoExistente === null) !== (modoNuevo === null)) return false;
             if (intf.nombre === valorIntf) return true;
             if (modoNuevo === null) return false;
@@ -1059,7 +1078,7 @@ document.addEventListener("DOMContentLoaded", () => {
             clockRateValue: null,
             helper: null
         });
-        invalidarScript(nodo);
+        invalidarScript(nodo, modoNuevo === null ? "router" : "switch");
         inputInterfaz.value = "";
         renderizarTabla();
     }
@@ -1127,7 +1146,7 @@ document.addEventListener("DOMContentLoaded", () => {
         intfActual.clockRate = checkClock;
         intfActual.clockRateValue = inputClockVal;
 
-        invalidarScript(nodo);
+        invalidarScript(nodo, "router");
         intfEditIndex = null;
         renderizarTabla();
     }
@@ -1146,8 +1165,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (event.target.classList.contains("btn-quitar-intf")) {
             if (!guardEdit()) return;
-            nodo.interfaces.splice(parseInt(event.target.getAttribute("data-intf-index"), 10), 1);
-            invalidarScript(nodo);
+            const idx = parseInt(event.target.getAttribute("data-intf-index"), 10);
+            const eliminada = nodo.interfaces[idx];
+            nodo.interfaces.splice(idx, 1);
+            invalidarScript(nodo, (eliminada && eliminada.mode) ? "switch" : "router");
             renderizarTabla();
         }
 
@@ -1212,7 +1233,7 @@ document.addEventListener("DOMContentLoaded", () => {
             ospfProcessIdInput.value = nodo.ospfProcessId ?? "1";
         }
 
-        // Autocompletar subinterfaz dot1Q con los datos del nodo (VLAN ID, gateway = último host, máscara)
+        // Autocompletar subinterfaz dot1Q con los datos del nodo
         if (ultimoNodoPrefill !== nodo) {
             limpiarFormularioVlans();
             ultimoNodoPrefill = nodo;
@@ -1250,7 +1271,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!guardEdit()) { this.checked = !this.checked; return; }
         const nodo = nodoActual(); if (!nodo) return;
         nodo.dhcpHabilitado = this.checked;
-        invalidarScript(nodo);
+        invalidarScript(nodo, "router");
         renderizarTabla();
     });
 
@@ -1258,7 +1279,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!guardEdit()) { this.checked = !this.checked; return; }
         const nodo = nodoActual(); if (!nodo) return;
         nodo.ripHabilitado = this.checked;
-        invalidarScript(nodo);
+        invalidarScript(nodo, "router");
         renderizarTabla();
     });
 
@@ -1266,7 +1287,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!guardEdit()) { this.checked = !this.checked; return; }
         const nodo = nodoActual(); if (!nodo) return;
         nodo.eigrpHabilitado = this.checked;
-        invalidarScript(nodo);
+        invalidarScript(nodo, "router");
         renderizarTabla();
     });
 
@@ -1274,7 +1295,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!guardEdit()) { this.checked = !this.checked; return; }
         const nodo = nodoActual(); if (!nodo) return;
         nodo.ospfHabilitado = this.checked;
-        invalidarScript(nodo);
+        invalidarScript(nodo, "router");
         renderizarTabla();
     });
 
@@ -1282,7 +1303,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!guardEdit()) { this.checked = !this.checked; return; }
         const nodo = nodoActual(); if (!nodo) return;
         nodo.vlansHabilitado = this.checked;
-        invalidarScript(nodo);
+        invalidarScript(nodo, "router");
         renderizarTabla();
     });
 
@@ -1407,7 +1428,7 @@ document.addEventListener("DOMContentLoaded", () => {
             gateway: gw || null,
             dns: dns || null
         });
-        invalidarScript(nodo);
+        invalidarScript(nodo, "router");
         limpiarFormularioDhcp();
         renderizarTabla();
     }
@@ -1425,7 +1446,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (!guardEdit()) return;
             const nodo = nodoActual(); if (!nodo) return;
             nodo.dhcpPools.splice(parseInt(event.target.getAttribute("data-dhcp-index"), 10), 1);
-            invalidarScript(nodo);
+            invalidarScript(nodo, "router");
             renderizarTabla();
         }
     });
@@ -1479,7 +1500,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         nodo.ripNetworks.push(classfulNet);
-        invalidarScript(nodo);
+        invalidarScript(nodo, "router");
         ripNetworkInput.value = "";
         renderizarTabla();
     }
@@ -1497,7 +1518,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (!guardEdit()) return;
             const nodo = nodoActual(); if (!nodo) return;
             nodo.ripNetworks.splice(parseInt(event.target.getAttribute("data-rip-index"), 10), 1);
-            invalidarScript(nodo);
+            invalidarScript(nodo, "router");
             renderizarTabla();
         }
     });
@@ -1544,7 +1565,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const num = parseInt(val, 10);
         const valido = /^\d+$/.test(val) && num >= 1 && num <= 65535;
         this.classList.toggle("is-invalid", val !== "" && !valido);
-        invalidarScript(nodo);
+        invalidarScript(nodo, "router");
         renderizarResumenNodos();
         guardarDatosStorage();
     });
@@ -1584,7 +1605,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         nodo.eigrpNetworks.push({ red: redCalc, mascara: mask, wildcard });
-        invalidarScript(nodo);
+        invalidarScript(nodo, "router");
         eigrpRedInput.value = "";
         eigrpMascaraInput.value = "";
         eigrpWildcardInput.value = "";
@@ -1607,12 +1628,12 @@ document.addEventListener("DOMContentLoaded", () => {
             if (!guardEdit()) return;
             const nodo = nodoActual(); if (!nodo) return;
             nodo.eigrpNetworks.splice(parseInt(event.target.getAttribute("data-eigrp-index"), 10), 1);
-            invalidarScript(nodo);
+            invalidarScript(nodo, "router");
             renderizarTabla();
         }
     });
 
-    // --- OSPF (Con Wildcard Automática e Importación directa de Subinterfaces dot1Q) ---
+    // --- OSPF ---
     function renderizarOspfNetworks() {
         if (nodoSeleccionadoIndex === null || !listaNodos[nodoSeleccionadoIndex]) {
             listaOspfNetworks.innerHTML = "";
@@ -1656,7 +1677,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const num = parseInt(val, 10);
         const valido = /^\d+$/.test(val) && num >= 1 && num <= 65535;
         this.classList.toggle("is-invalid", val !== "" && !valido);
-        invalidarScript(nodo);
+        invalidarScript(nodo, "router");
         renderizarResumenNodos();
         guardarDatosStorage();
     });
@@ -1707,7 +1728,7 @@ document.addEventListener("DOMContentLoaded", () => {
             area: areaStr,
             origenDot1q: null
         });
-        invalidarScript(nodo);
+        invalidarScript(nodo, "router");
         ospfRedInput.value = "";
         ospfMascaraInput.value = "";
         ospfWildcardInput.value = "";
@@ -1725,7 +1746,6 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     });
 
-    // Importar automáticamente a OSPF todas las subinterfaces dot1Q y puertos físicos L3 del router
     btnImportarDot1qOspf.addEventListener("click", () => {
         if (!guardEdit()) return;
         const nodo = nodoActual(); if (!nodo) return;
@@ -1733,7 +1753,6 @@ document.addEventListener("DOMContentLoaded", () => {
         const areaStr = ospfAreaInput.value.trim() !== "" ? ospfAreaInput.value.trim() : "0";
         let agregadas = 0;
 
-        // 1. Importar desde Subinterfaces VLAN (encapsulation dot1Q)
         if (nodo.vlans && nodo.vlans.length > 0) {
             nodo.vlans.forEach(v => {
                 if (esIPv4Valida(v.ip) && esMascaraValida(v.mascara)) {
@@ -1754,7 +1773,6 @@ document.addEventListener("DOMContentLoaded", () => {
             });
         }
 
-        // 2. Importar también desde Interfaces Físicas L3 configuradas
         const intfsL3 = nodo.interfaces.filter(i => (!i.mode || i.mode === 'none') && esIPv4Valida(i.ip) && esMascaraValida(i.mascara));
         intfsL3.forEach(i => {
             const maskOct = i.mascara.split('.').map(Number);
@@ -1777,7 +1795,7 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
         }
 
-        invalidarScript(nodo);
+        invalidarScript(nodo, "router");
         renderizarTabla();
     });
 
@@ -1786,7 +1804,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (!guardEdit()) return;
             const nodo = nodoActual(); if (!nodo) return;
             nodo.ospfNetworks.splice(parseInt(event.target.getAttribute("data-ospf-index"), 10), 1);
-            invalidarScript(nodo);
+            invalidarScript(nodo, "router");
             renderizarTabla();
         }
     });
@@ -1875,7 +1893,7 @@ document.addEventListener("DOMContentLoaded", () => {
             helper: hlp !== "" ? hlp : null,
             nativa
         });
-        invalidarScript(nodo);
+        invalidarScript(nodo, "router");
         limpiarFormularioVlans();
         renderizarTabla();
     }
@@ -1893,7 +1911,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (!guardEdit()) return;
             const nodo = nodoActual(); if (!nodo) return;
             nodo.vlans.splice(parseInt(event.target.getAttribute("data-vlan-index"), 10), 1);
-            invalidarScript(nodo);
+            invalidarScript(nodo, "router");
             renderizarTabla();
         }
     });
@@ -1968,7 +1986,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
         cli += "exit\nwrite memory\n";
         terminalSwitch.textContent = cli;
+        nodo.scriptSwitch = cli;
         btnListoSwitch.style.display = "inline-block";
+        renderizarResumenNodos();
         guardarDatosStorage();
     }
 
@@ -2013,8 +2033,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
         let cli = "enable\nconfigure terminal\n";
 
-        // 1. Interfaces Físicas L3 del Router (Se configuran primero para dar Router-ID activo a OSPF)
-        const intfsL3 = nodo.interfaces.filter(i => !i.mode || i.mode === 'none');
+        // 1. Interfaces Físicas L3 del Router (excluyendo puertos físicos sin IP que son padres dot1Q)
+        const padresDot1q = new Set((nodo.vlansHabilitado ? nodo.vlans : []).map(v => v.intf));
+        const intfsL3 = nodo.interfaces.filter(i => (!i.mode || i.mode === 'none') && !(padresDot1q.has(i.nombre) && !i.ip));
         if (intfsL3.length > 0) {
             intfsL3.forEach(intf => {
                 const nombreCompleto = formatearInterfazCisco(intf.nombre, false);
@@ -2081,7 +2102,7 @@ document.addEventListener("DOMContentLoaded", () => {
             cli += `exit\n`;
         }
 
-        // 6. Enrutamiento OSPF (Incluye redes locales y redes de subinterfaces encapsulation dot1Q)
+        // 6. Enrutamiento OSPF
         const pidOspf = String(nodo.ospfProcessId ?? "");
         const pidOspfValido = /^\d+$/.test(pidOspf) && parseInt(pidOspf, 10) >= 1 && parseInt(pidOspf, 10) <= 65535;
         if (nodo.ospfHabilitado && nodo.ospfNetworks.length > 0 && pidOspfValido) {
@@ -2095,7 +2116,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
         cli += "exit\nwrite memory\n";
         terminalRouter.textContent = cli;
+        nodo.scriptRouter = cli;
+        nodo.scriptGenerado = cli;
         btnListoRouter.style.display = "inline-block";
+        renderizarResumenNodos();
         guardarDatosStorage();
     });
 
@@ -2131,7 +2155,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 : `<span class="badge bg-info text-dark ms-2">🔌 Switch L2</span>`;
 
             const desgloseIntf = nodo.interfaces.length > 0
-                ? nodo.interfaces.map(intf => `<li class="list-group-item py-1 px-2 d-flex justify-content-between"><span class="fw-bold">${esc(intf.nombre.toUpperCase())}</span><span class="font-monospace text-muted">${intf.ip ? esc(intf.ip) : (intf.mode ? `L2 ${esc(intf.mode.toUpperCase())}` : 'Sin IP')}</span></li>`).join('')
+                ? nodo.interfaces.map(intf => `<li class="list-group-item py-1 px-2 d-flex justify-content-between"><span class="fw-bold">${esc(intf.nombre.toUpperCase())}</span><span class="font-monospace text-muted">${intf.ip ? esc(intf.ip) : (intf.mode ? `L2 ${esc(intf.mode.toUpperCase())}` : 'Padre dot1Q / Sin IP')}</span></li>`).join('')
                 : `<li class="list-group-item text-muted small">Sin interfaces</li>`;
 
             const dhcpActivo = nodo.dhcpHabilitado && nodo.dhcpPools.length > 0;
@@ -2215,11 +2239,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
     acordeonResumenNodos.addEventListener("click", function (event) {
         if (event.target.classList.contains("btn-copiar-resumen")) {
+            const claseBase = event.target.classList.contains("btn-outline-info") ? "btn-outline-info" : "btn-outline-primary";
             copiarAlPortapapeles(
                 decodeURIComponent(event.target.getAttribute("data-script")),
                 event.target,
                 event.target.textContent,
-                "btn-outline-primary",
+                claseBase,
                 "btn-success"
             );
         }
@@ -2278,10 +2303,13 @@ document.addEventListener("DOMContentLoaded", () => {
             seccionRouter.style.display = "none";
             seccionSwitch.style.display = "none";
             panelAuditoria.style.display = "none";
-            terminalRouter.textContent = TEXTO_TERMINAL_VACIO;
-            terminalSwitch.textContent = TEXTO_SWITCH_VACIO;
-            btnListoRouter.style.display = "none";
-            btnListoSwitch.style.display = "none";
+
+            const sel = nodoActual();
+            terminalRouter.textContent = (sel && (sel.scriptRouter || sel.scriptGenerado)) ? (sel.scriptRouter || sel.scriptGenerado) : TEXTO_TERMINAL_VACIO;
+            terminalSwitch.textContent = (sel && sel.scriptSwitch) ? sel.scriptSwitch : TEXTO_SWITCH_VACIO;
+            btnListoRouter.style.display = (sel && (sel.scriptRouter || sel.scriptGenerado)) ? "inline-block" : "none";
+            btnListoSwitch.style.display = (sel && sel.scriptSwitch) ? "inline-block" : "none";
+
             renderizarTabla();
         }
     });

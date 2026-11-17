@@ -6,7 +6,7 @@
     <title>Calculadora IP & Cisco Script Generator</title>
     <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="style.css" rel="stylesheet">
+    <link href="script/css/style.css" rel="stylesheet">
 </head>
 <body class="bg-light">
 
@@ -48,7 +48,7 @@
                             </form>
                             <div id="resultadoEstandar" class="mt-4"></div>
                         </div>
-                        
+
                         <!-- Opción 2: Sustitución de Variables -->
                         <div class="tab-pane fade" id="sustitucion" role="tabpanel">
                             <form id="formSustitucion">
@@ -129,7 +129,7 @@
                     <div class="row">
                         <div class="col-md-5 border-end">
                             <h6 class="fw-bold text-primary mb-3">Agregar Puerto al Nodo</h6>
-                            
+
                             <!-- Selector de Modo (Router L3 vs Switch L2) -->
                             <div class="mb-3">
                                 <label for="inputModoPuerto" class="form-label fw-bold text-secondary mb-1" style="font-size: 0.85rem;">Tipo / Modo de Puerto:</label>
@@ -152,7 +152,7 @@
                                 💡 <strong>Nota Switch Cisco:</strong> Los puertos físicos de Switch inician siempre en <strong>1</strong> (ej. <code>fa0/1</code>, <code>g0/1</code>). El puerto <code>0/0</code> no existe en Switches.
                             </small>
                         </div>
-                        
+
                         <div class="col-md-7 mt-3 mt-md-0">
                             <label class="form-label fw-bold text-secondary mb-3">Interfaces conectadas a este nodo:</label>
                             <ul class="list-group list-group-flush" id="listaInterfaces">
@@ -211,7 +211,7 @@
                             <button class="btn btn-info w-100 fw-bold shadow-sm text-dark btn-sm py-1" type="button" id="btnGenerarConfigSwitch">⚙️ Generar Script Switch</button>
                         </div>
                     </div>
-                    
+
                     <div class="d-flex justify-content-between align-items-center mb-2">
                         <h6 class="fw-bold text-dark mb-0">Script CLI para Switch (Sin comentarios ni espacios extra)</h6>
                         <div>
@@ -332,7 +332,7 @@
                             <ul class="list-group list-group-flush" id="listaEigrpNetworks"></ul>
                         </div>
 
-                        <!-- 4. Panel OSPF (Con soporte para Subinterfaces dot1Q y Wildcard Automática) -->
+                        <!-- 4. Panel OSPF -->
                         <div id="formularioOspf" style="display: none;" class="border-top border-success pt-3 mt-3">
                             <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
                                 <h6 class="fw-bold text-success mb-0">Protocolo OSPF (Wildcard Automática + Soporte Subinterfaces <code>dot1Q</code>)</h6>
@@ -419,7 +419,7 @@
                     <div id="panelAuditoria" class="mb-3" style="display: none;"></div>
 
                     <button class="btn btn-success w-100 fw-bold shadow-sm mb-3 fs-5 py-2" type="button" id="btnGenerarConfigRouter">⚙️ Generar Código Router y Auditar</button>
-                    
+
                     <div class="d-flex justify-content-between align-items-center mb-2">
                         <h6 class="fw-bold text-success mb-0">Salida CLI Cisco Router (Sin comentarios)</h6>
                         <div>
@@ -458,6 +458,6 @@
 <!-- Bootstrap 5 JS Bundle -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <!-- Script principal -->
-<script src="script.js"></script>
+<script src="assets/js/script.js"></script>
 </body>
 </html>

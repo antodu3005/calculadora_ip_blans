@@ -3,6 +3,33 @@ body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
-#resultado {
+/* Hace visibles las pestañas inactivas sobre el encabezado bg-primary */
+#menuCalculadora .nav-link:not(.active) {
+    color: rgba(255, 255, 255, 0.85);
+}
+
+#menuCalculadora .nav-link:not(.active):hover {
+    color: #ffffff;
+    border-color: rgba(255, 255, 255, 0.35);
+}
+
+/* Transiciones e interactividad de tabla y copiado rápido */
+#resultadoEstandar,
+#resultadoSustitucion {
     transition: all 0.3s ease-in-out;
+}
+
+.fila-nodo {
+    cursor: pointer;
+}
+
+.copy-click {
+    cursor: pointer;
+    padding: 0 3px;
+    border-radius: 3px;
+    transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.copy-click:hover {
+    text-decoration: underline;
 }
