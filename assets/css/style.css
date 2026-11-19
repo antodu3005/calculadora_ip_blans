@@ -13,7 +13,7 @@ body {
     border-color: rgba(255, 255, 255, 0.35);
 }
 
-/* Transiciones e interactividad de tabla y copiado rápido */
+/* Transiciones e interactividad de tabla */
 #resultadoEstandar,
 #resultadoSustitucion {
     transition: all 0.3s ease-in-out;
@@ -23,13 +23,92 @@ body {
     cursor: pointer;
 }
 
+/* Subneteo VLAN: inputs editables dentro de la tabla */
+.tabla-subneteo input {
+    min-width: 70px;
+}
+
+/* =========================================================
+   Copiado rápido con un clic
+   - Mouse encima: azul y en negritas
+   - Al copiar: verde, subrayado verde y un pequeño "brinco"
+   ========================================================= */
 .copy-click {
+    display: inline-block;
     cursor: pointer;
     padding: 0 3px;
     border-radius: 3px;
-    transition: background-color 0.2s ease, color 0.2s ease;
+    text-decoration: underline;
+    text-decoration-color: transparent;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 3px;
+    transition: color 0.15s ease, text-decoration-color 0.15s ease, background-color 0.15s ease;
 }
 
 .copy-click:hover {
-    text-decoration: underline;
+    color: #0d6efd !important;
+    font-weight: 700;
+}
+
+.copy-click.copiado {
+    color: #198754 !important;
+    font-weight: 700;
+    text-decoration-color: #198754 !important;
+    animation: brincoCopiado 0.6s ease;
+}
+
+@keyframes brincoCopiado {
+    0%   { transform: scale(1); }
+    30%  { transform: scale(1.12); }
+    60%  { transform: scale(0.97); }
+    100% { transform: scale(1); }
+}
+
+/* Sobre fondo oscuro (resultado de "Validar y Calcular") se usan tonos claros */
+.text-light.copy-click:hover {
+    color: #6ea8fe !important;
+}
+
+.text-light.copy-click.copiado {
+    color: #75d69c !important;
+    text-decoration-color: #75d69c !important;
+}
+
+/* Etiquetas grises (Dirección de Red): el texto queda blanco y cambia el fondo */
+.badge.copy-click {
+    text-decoration: none;
+}
+
+.badge.copy-click:hover {
+    color: #ffffff !important;
+    background-color: #0d6efd !important;
+}
+
+.badge.copy-click.copiado {
+    color: #ffffff !important;
+    background-color: #198754 !important;
+}
+
+/* Aviso flotante "Copiado: ..." */
+#avisoCopia {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 2000;
+    background: #198754;
+    color: #ffffff;
+    font-family: SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.9rem;
+    padding: 10px 16px;
+    border-radius: 8px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+    opacity: 0;
+    transform: translateY(10px);
+    pointer-events: none;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+#avisoCopia.visible {
+    opacity: 1;
+    transform: translateY(0);
 }

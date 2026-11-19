@@ -107,6 +107,34 @@ document.addEventListener("DOMContentLoaded", () => {
     const seccionResumenNodos = document.getElementById("seccionResumenNodos");
     const acordeonResumenNodos = document.getElementById("acordeonResumenNodos");
 
+    // --- Referencias del DOM: Subneteo VLAN (VLSM / FLSM) ---
+    const subRedBase = document.getElementById("subRedBase");
+    const subCidrBase = document.getElementById("subCidrBase");
+    const subMetodo = document.getElementById("subMetodo");
+    const subSitio = document.getElementById("subSitio");
+    const subSerialesCant = document.getElementById("subSerialesCant");
+    const btnSubAgregarSeriales = document.getElementById("btnSubAgregarSeriales");
+    const subVlanId = document.getElementById("subVlanId");
+    const subNombre = document.getElementById("subNombre");
+    const subHosts = document.getElementById("subHosts");
+    const subCantidad = document.getElementById("subCantidad");
+    const subAyudaMetodo = document.getElementById("subAyudaMetodo");
+    const btnSubAgregarFila = document.getElementById("btnSubAgregarFila");
+    const subFilasBody = document.getElementById("subFilasBody");
+    const btnSubCalcular = document.getElementById("btnSubCalcular");
+    const btnSubLimpiarFilas = document.getElementById("btnSubLimpiarFilas");
+    const resultadoSubneteo = document.getElementById("resultadoSubneteo");
+
+    // --- Referencias del DOM: Switch completo (todas las VLANs) ---
+    const seccionSwitchGlobal = document.getElementById("seccionSwitchGlobal");
+    const cuerpoSwitchGlobal = document.getElementById("cuerpoSwitchGlobal");
+    const btnToggleSwitchGlobal = document.getElementById("btnToggleSwitchGlobal");
+    const swgVlansBody = document.getElementById("swgVlansBody");
+    const swgSitio = document.getElementById("swgSitio");
+    const btnGenerarSwitchGlobal = document.getElementById("btnGenerarSwitchGlobal");
+    const btnCopiarSwitchGlobal = document.getElementById("btnCopiarSwitchGlobal");
+    const terminalSwitchGlobal = document.getElementById("terminalSwitchGlobal");
+
     // --- Estado General ---
     const listaNodos = [];
     const historialBorrados = [];
@@ -117,6 +145,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const TEXTO_TERMINAL_VACIO = 'Haz clic en "Generar Código Router y Auditar" para evaluar IPs y crear script.';
     const TEXTO_SWITCH_VACIO = 'Haz clic en "Generar Script Switch" para crear los comandos de la VLAN y sus puertos.';
+    const TEXTO_SWITCH_GLOBAL_VACIO = 'Llena los puertos y haz clic en "Generar Script Completo del Switch".';
+    const TEXTO_ROUTERS_VACIO = 'Asigna puertos y haz clic en "Generar Script de este Router".';
+
+    // Estado del subneteo y del switch completo
+    let subFilas = [];
+    let subResultado = null;
+    // Configuración de switch por Red / Sitio: { seleccionado, sitios: { [sitio]: cfg } }
+    let swgTodos = { seleccionado: null, sitios: {} };
+    let swg = estadoSwitchGlobalVacio();
 
     // --- Utilidades de Sanitización y Formateo Cisco IOS ---
     function esc(valor) {
@@ -126,6 +163,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function nodoActual() {
         return nodoSeleccionadoIndex !== null ? (listaNodos[nodoSeleccionadoIndex] || null) : null;
+    }
+
+    function etiquetaVlan(n) {
+        return n.vlanId === null ? "Sin VLAN" : `VLAN ${n.vlanId}`;
+    }
+
+    function etiquetaNodo(n) {
+        return `${n.cliente}${n.sitio ? ` · ${n.sitio}` : ''} (${etiquetaVlan(n)})`;
     }
 
     // Invalida selectivamente Router o Switch para no perder el otro script del nodo
@@ -224,10 +269,11 @@ document.addEventListener("DOMContentLoaded", () => {
         return s || `VLAN_${id}`;
     }
 
-    function copiarAlPortapapeles(texto, btnElement, textoOriginal, claseBase = "", claseExito = "") {
-        if (!texto || texto === TEXTO_TERMINAL_VACIO || texto === TEXTO_SWITCH_VACIO) return;
+    function copiarAlPortapapeles(texto, btnElement, textoOriginal, claseBase = "", claseExito = "", alCopiar = null) {
+        if (!texto || texto === TEXTO_TERMINAL_VACIO || texto === TEXTO_SWITCH_VACIO || texto === TEXTO_SWITCH_GLOBAL_VACIO || texto === TEXTO_ROUTERS_VACIO) return;
 
         const exito = () => {
+            if (typeof alCopiar === "function") alCopiar();
             if (btnElement && claseBase && claseExito) {
                 btnElement.textContent = "¡Copiado!";
                 if (btnElement.classList.contains(claseBase)) {
@@ -292,7 +338,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
         return {
             ...base,
-            vlanId: Number.isFinite(Number(base.vlanId)) && Number(base.vlanId) >= 1 ? Number(base.vlanId) : 10,
+            vlanId: base.vlanId === null ? null : (Number.isFinite(Number(base.vlanId)) && Number(base.vlanId) >= 1 && Number(base.vlanId) <= 4094 ? Number(base.vlanId) : 10),
+            sitio: str(base.sitio).trim(),
             cliente: str(base.cliente),
             direccion: str(base.direccion),
             mascara: str(base.mascara),
@@ -353,6 +400,9 @@ document.addEventListener("DOMContentLoaded", () => {
                 localStorage.removeItem('ipcalc_nodos');
                 localStorage.removeItem('ipcalc_history');
                 localStorage.removeItem('ipcalc_vlanid');
+                localStorage.removeItem('ipcalc_subneteo');
+                localStorage.removeItem('ipcalc_switch_global');
+                localStorage.removeItem('ipcalc_routers');
             } catch (e) { }
             location.reload();
         }
@@ -475,18 +525,21 @@ document.addEventListener("DOMContentLoaded", () => {
                         <span class="text-secondary">Hosts soportados:</span> <span class="text-light copy-click" title="Clic para copiar">${datosRedCalculada.hosts}</span>
                         <hr class="border-secondary mt-3 mb-2">
                         <div class="mt-2">
-                            <label class="form-label text-light fw-bold mb-1" style="font-size: 0.85rem;">Asignar red a Cliente / Nodo / VLAN (Presiona Enter para guardar):</label>
+                            <label class="form-label text-light fw-bold mb-1" style="font-size: 0.85rem;">Asignar red a Cliente / Nodo / VLAN (puedes repetir el VLAN ID · Enter para guardar):</label>
                             <div class="row g-2">
-                                <div class="col-3">
+                                <div class="col-6 col-md-2">
                                     <div class="input-group input-group-sm">
                                         <span class="input-group-text bg-secondary text-white border-secondary">VLAN</span>
-                                        <input type="number" class="form-control input-vlan-id" value="${datosRedCalculada.vlanId}" min="1" max="4094" title="VLAN ID">
+                                        <input type="number" class="form-control input-vlan-id" value="${datosRedCalculada.vlanId}" min="1" max="4094" title="VLAN ID (vacío = sin VLAN)" placeholder="—">
                                     </div>
                                 </div>
-                                <div class="col-6">
+                                <div class="col-6 col-md-3">
+                                    <input type="text" class="form-control form-control-sm input-sitio" placeholder="Red / Sitio (Ej. RED1)" title="Red o sitio al que pertenece (opcional)">
+                                </div>
+                                <div class="col-6 col-md-4">
                                     <input type="text" class="form-control form-control-sm input-cliente" placeholder="Ej. Ventas, Sistemas, Pachuca 1">
                                 </div>
-                                <div class="col-3">
+                                <div class="col-6 col-md-3">
                                     <button class="btn btn-sm btn-warning btn-guardar-nodo fw-bold w-100" type="button">Guardar a Lista</button>
                                 </div>
                             </div>
@@ -500,44 +553,34 @@ document.addEventListener("DOMContentLoaded", () => {
             });
 
             contenedor.querySelectorAll('.copy-click').forEach(span => {
-                span.addEventListener('click', () => {
-                    copiarAlPortapapeles(span.textContent.trim(), null, "");
-                    const originalBg = span.style.backgroundColor;
-                    const originalColor = span.style.color;
-                    span.style.backgroundColor = "#198754";
-                    span.style.color = "white";
-                    setTimeout(() => {
-                        span.style.backgroundColor = originalBg;
-                        span.style.color = originalColor;
-                    }, 800);
-                });
+                span.addEventListener('click', () => flashCopia(span));
             });
 
             const inputClienteEl = contenedor.querySelector('.input-cliente');
             const inputVlanEl = contenedor.querySelector('.input-vlan-id');
+            const inputSitioEl = contenedor.querySelector('.input-sitio');
             const btnGuardarEl = contenedor.querySelector('.btn-guardar-nodo');
 
             const ejecutarGuardadoNodo = () => {
                 if (!guardEdit()) return;
                 const clienteNombre = inputClienteEl.value.trim();
-                const vid = parseInt(inputVlanEl.value.trim(), 10);
+                const sitio = inputSitioEl.value.trim();
+                const vidTxt = inputVlanEl.value.trim();
+                const vid = vidTxt === "" ? null : parseInt(vidTxt, 10);
 
                 if (clienteNombre === "") {
                     alert("Por favor, ingresa un nombre para el cliente o VLAN.");
                     return;
                 }
-                if (isNaN(vid) || vid < 1 || vid > 4094) {
-                    alert("El VLAN ID debe ser un número entre 1 y 4094.");
+                if (vid !== null && (!/^\d+$/.test(vidTxt) || vid < 1 || vid > 4094)) {
+                    alert("El VLAN ID debe ser un número entre 1 y 4094 (o déjalo vacío para una red sin VLAN).");
                     return;
                 }
-                if (listaNodos.some(n => n.cliente.toLowerCase() === clienteNombre.toLowerCase())) {
-                    alert(`El nodo "${clienteNombre}" ya existe en la lista.`);
-                    return;
-                }
-
-                const nodoMismaVlan = listaNodos.find(n => Number(n.vlanId) === vid);
-                if (nodoMismaVlan) {
-                    alert(`La VLAN ${vid} ya está asignada al nodo "${nodoMismaVlan.cliente}". Usa otro VLAN ID.`);
+                // Se permite repetir VLAN ID y nombre (subneteo de una misma VLAN);
+                // solo se bloquea guardar exactamente la misma red en la misma VLAN.
+                const direccionNueva = `${ipValue}/${cidr}`;
+                if (listaNodos.some(n => n.vlanId === vid && n.direccion === direccionNueva)) {
+                    alert(`La red ${direccionNueva} ya está guardada${vid !== null ? ` en la VLAN ${vid}` : ''}.`);
                     return;
                 }
                 const nodoTraslapado = listaNodos.find(n => {
@@ -552,15 +595,16 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
 
                 datosRedCalculada.vlanId = vid;
+                datosRedCalculada.sitio = sitio;
                 guardarNodoLista(clienteNombre, JSON.parse(JSON.stringify(datosRedCalculada)));
-                vlanIdCounter = vid + 10;
+                if (vid !== null) vlanIdCounter = Math.min(vid + 10, 4094);
                 inputClienteEl.value = "";
                 inputVlanEl.value = vlanIdCounter;
             };
 
             btnGuardarEl.addEventListener('click', ejecutarGuardadoNodo);
 
-            [inputClienteEl, inputVlanEl].forEach(inp => {
+            [inputClienteEl, inputVlanEl, inputSitioEl].forEach(inp => {
                 inp.addEventListener('keydown', (ev) => {
                     if (ev.key === "Enter") {
                         ev.preventDefault();
@@ -675,7 +719,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // Auditoría de Subinterfaces VLAN (Router-on-a-Stick / encapsulation dot1Q)
         if (nodo.vlansHabilitado && nodo.vlans.length > 0) {
-            if (!nodo.vlans.some(v => Number(v.id) === Number(nodo.vlanId))) {
+            if (nodo.vlanId !== null && !nodo.vlans.some(v => Number(v.id) === Number(nodo.vlanId))) {
                 logs.push({ tipo: 'warning', texto: `Ninguna subinterfaz usa encapsulation dot1Q ${nodo.vlanId} (el VLAN ID de este nodo).` });
             }
             const nativasPorPadre = {};
@@ -880,15 +924,19 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         if (listaNodos.length === 0 && historialBorrados.length > 0) {
-            tablaNodosBody.innerHTML = `<tr><td colspan="10" class="text-center text-muted py-3">Todos los nodos eliminados. Puedes deshacer la acción.</td></tr>`;
+            tablaNodosBody.innerHTML = `<tr><td colspan="11" class="text-center text-muted py-3">Todos los nodos eliminados. Puedes deshacer la acción.</td></tr>`;
         } else {
             tablaNodosBody.innerHTML = listaNodos.map((nodo, index) => {
                 const isSelected = index === nodoSeleccionadoIndex;
                 const totalIntf = nodo.interfaces.length + (nodo.vlansHabilitado ? nodo.vlans.length : 0);
                 const ipBase = nodo.direccion.split('/')[0];
+                // ×N = subredes que comparten la misma VLAN dentro de la misma red / sitio
+                const subredesMismaVlan = nodo.vlanId === null ? 0 : listaNodos.filter(n => n.vlanId === nodo.vlanId && n.sitio === nodo.sitio).length;
+                const badgeSubredes = subredesMismaVlan > 1 ? ` <span class="badge bg-warning text-dark" title="Subredes de esta VLAN en la misma red">×${subredesMismaVlan}</span>` : '';
                 return `
                     <tr class="fila-nodo ${isSelected ? 'table-primary border-primary' : ''}" data-index="${index}">
-                        <td class="fw-bold text-danger">${esc(nodo.vlanId)}</td>
+                        <td class="fw-bold text-danger">${nodo.vlanId === null ? '<span class="text-muted">—</span>' : esc(nodo.vlanId)}${badgeSubredes}</td>
+                        <td class="fw-bold">${nodo.sitio ? esc(nodo.sitio) : '<span class="text-muted">—</span>'}</td>
                         <td class="fw-bold ${isSelected ? 'text-dark' : 'text-primary'}">${esc(nodo.cliente)}</td>
                         <td><span class="badge ${isSelected ? 'bg-primary' : 'bg-secondary'} copy-click" data-copy="${esc(ipBase)}" title="Clic para copiar IP de Red (${esc(ipBase)})">${esc(nodo.direccion)}</span></td>
                         <td><span class="copy-click" title="Clic para copiar Máscara">${esc(nodo.mascara)}</span></td>
@@ -911,6 +959,8 @@ document.addEventListener("DOMContentLoaded", () => {
         renderizarOspfNetworks();
         renderizarVlans();
         renderizarResumenNodos();
+        renderizarSwitchGlobal();
+        renderizarRouters();
         guardarDatosStorage();
     }
 
@@ -934,7 +984,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const nodo = listaNodos[nodoSeleccionadoIndex];
         seccionConfiguracion.style.display = "flex";
-        tituloConfiguracion.innerHTML = `Gestión de Interfaces: <span class="text-dark border-bottom border-2 border-primary">${esc(nodo.cliente)} (VLAN ${esc(nodo.vlanId)})</span>`;
+        tituloConfiguracion.innerHTML = `Gestión de Interfaces: <span class="text-dark border-bottom border-2 border-primary">${esc(etiquetaNodo(nodo))}</span>`;
 
         const padresDot1q = new Set((nodo.vlansHabilitado ? nodo.vlans : []).map(v => v.intf));
 
@@ -986,7 +1036,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 const esSerial = intf.nombre.toLowerCase().startsWith('s');
                 const esPadreDot1qSinIp = !intf.mode && !intf.ip && padresDot1q.has(intf.nombre);
                 const modeBadge = intf.mode === 'access'
-                    ? `<span class="badge bg-info text-dark ms-2">SWITCH ACCESS (VLAN ${esc(nodo.vlanId)})</span>`
+                    ? `<span class="badge bg-info text-dark ms-2">SWITCH ACCESS (${esc(etiquetaVlan(nodo))})</span>`
                     : (intf.mode === 'trunk' ? `<span class="badge bg-warning text-dark ms-2">SWITCH TRUNK</span>` : (esPadreDot1qSinIp ? `<span class="badge bg-success ms-2">PADRE dot1Q (Trunk L3)</span>` : ''));
                 const clockBadge = (esSerial && intf.clockRate) ? `<span class="badge bg-warning text-dark ms-2 border border-secondary" style="font-size: 0.65rem;">⏱ CLOCK: ${esc(intf.clockRateValue)}</span>` : '';
                 const helperBadge = intf.helper ? `<span class="badge bg-info text-dark ms-2 border border-secondary" style="font-size: 0.65rem;">HELPER: ${esc(intf.helper)}</span>` : '';
@@ -1206,9 +1256,9 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         const nodo = listaNodos[nodoSeleccionadoIndex];
         seccionMenuNodo.style.display = "flex";
-        nombreNodoMenu.textContent = `${nodo.cliente} (VLAN ${nodo.vlanId})`;
+        nombreNodoMenu.textContent = etiquetaNodo(nodo);
 
-        switchInfoVlanId.textContent = nodo.vlanId;
+        switchInfoVlanId.textContent = nodo.vlanId === null ? "— (esta red no tiene VLAN)" : nodo.vlanId;
         switchInfoVlanName.textContent = nombreVlanCisco(nodo.cliente, nodo.vlanId);
 
         checkHabilitarDhcp.checked = !!nodo.dhcpHabilitado;
@@ -1238,7 +1288,7 @@ document.addEventListener("DOMContentLoaded", () => {
             limpiarFormularioVlans();
             ultimoNodoPrefill = nodo;
         }
-        const vlanYaAgregada = nodo.vlans.some(v => Number(v.id) === Number(nodo.vlanId));
+        const vlanYaAgregada = nodo.vlanId === null || nodo.vlans.some(v => Number(v.id) === Number(nodo.vlanId));
         if (!vlanYaAgregada && !vlanId.value && !vlanIp.value && !vlanMascara.value) {
             vlanId.value = nodo.vlanId;
             vlanIp.value = nodo.hostMax;
@@ -1920,6 +1970,10 @@ document.addEventListener("DOMContentLoaded", () => {
     function generarScriptSwitchHandler() {
         if (!guardEdit()) return;
         const nodo = nodoActual(); if (!nodo) return;
+        if (nodo.vlanId === null) {
+            alert("Esta red no tiene VLAN (por ejemplo un enlace serial o una LAN de servidor), así que no lleva script de switch con VLANs.");
+            return;
+        }
 
         const pDefault = canonIntf(switchPuertoDefault.value);
         const pTrunk = canonIntf(switchPuertoTrunkOpcional.value);
@@ -2193,7 +2247,7 @@ document.addEventListener("DOMContentLoaded", () => {
             <div class="accordion-item mb-2 border shadow-sm">
                 <h2 class="accordion-header">
                     <button class="accordion-button collapsed fw-bold text-dark bg-light" type="button" data-bs-toggle="collapse" data-bs-target="#collapse_${indexReal}">
-                        ✅ ${esc(nodo.cliente)} <span class="badge bg-danger ms-2">VLAN ${esc(nodo.vlanId)}</span> <span class="badge bg-secondary ms-1">${esc(nodo.direccion)}</span> ${semaforoBadge}
+                        ✅ ${esc(nodo.cliente)} ${nodo.sitio ? `<span class="badge bg-dark ms-2">${esc(nodo.sitio)}</span>` : ''} <span class="badge bg-danger ms-2">${esc(etiquetaVlan(nodo))}</span> <span class="badge bg-secondary ms-1">${esc(nodo.direccion)}</span> ${semaforoBadge}
                         <span class="ms-auto me-3 d-none d-md-block">
                             <span class="badge bg-primary me-1">${nodo.interfaces.length} INTs</span>
                             <span class="badge bg-info text-dark me-1">${vlansActivo ? nodo.vlans.length : 0} dot1Q</span>
@@ -2265,18 +2319,12 @@ document.addEventListener("DOMContentLoaded", () => {
     tablaNodosBody.addEventListener("click", function (event) {
         if (event.target.closest(".copy-click")) {
             event.stopPropagation();
-            const span = event.target.closest(".copy-click");
-            const textoACopiar = span.getAttribute("data-copy") || span.textContent.trim();
-            copiarAlPortapapeles(textoACopiar, null, "");
-            const originalBg = span.style.backgroundColor;
-            const originalColor = span.style.color;
-            span.style.backgroundColor = "#198754";
-            span.style.color = "white";
-            setTimeout(() => {
-                span.style.backgroundColor = originalBg;
-                span.style.color = originalColor;
-            }, 800);
+            flashCopia(event.target.closest(".copy-click"));
             return;
+        }
+        const seleccion = window.getSelection ? window.getSelection() : null;
+        if (!event.target.closest("button") && seleccion && String(seleccion).trim() !== "" && tablaNodosBody.contains(seleccion.anchorNode)) {
+            return; // se está seleccionando texto con el mouse para copiar a mano
         }
 
         if (event.target.closest(".btn-eliminar")) {
@@ -2312,6 +2360,1187 @@ document.addEventListener("DOMContentLoaded", () => {
 
             renderizarTabla();
         }
+    });
+
+    // =====================================================================
+    // --- SUBNETEO DE VLANs (VLSM / FLSM) ---
+    // =====================================================================
+
+    // Construye un objeto de nodo completo a partir de una red (entero) y su prefijo
+    function crearDatosRed(redInt, cidr, vid, sitio = "") {
+        const maskOct = calcularMascara(cidr);
+        const maskInt = ipToInt(maskOct);
+        const netInt = (redInt & maskInt) >>> 0;
+        const bcastInt = (netInt | (~maskInt >>> 0)) >>> 0;
+        let hMin, hMax, n;
+        if (cidr === 32) { n = 1; hMin = netInt; hMax = netInt; }
+        else if (cidr === 31) { n = 2; hMin = netInt; hMax = bcastInt; }
+        else { n = Math.pow(2, 32 - cidr) - 2; hMin = netInt + 1; hMax = bcastInt - 1; }
+        return {
+            vlanId: vid,
+            sitio,
+            direccion: `${intToIp(netInt).join('.')}/${cidr}`,
+            mascara: maskOct.join('.'),
+            hostMin: intToIp(hMin).join('.'),
+            hostMax: intToIp(hMax).join('.'),
+            broadcast: intToIp(bcastInt).join('.'),
+            hosts: n.toLocaleString(),
+            hostsCrudo: n,
+            interfaces: [], dhcpPools: [], ripNetworks: [], eigrpNetworks: [], ospfNetworks: [], vlans: [],
+            eigrpAS: "", ospfProcessId: "1",
+            dhcpHabilitado: false, ripHabilitado: false, eigrpHabilitado: false, ospfHabilitado: false, vlansHabilitado: false,
+            scriptGenerado: null, scriptRouter: null, scriptSwitch: null, auditoriaLogs: []
+        };
+    }
+
+    function redesSeTraslapan(dirA, dirB) {
+        const [ipA, cA] = String(dirA).split('/');
+        const [ipB, cB] = String(dirB).split('/');
+        const a = parseInt(cA, 10), b = parseInt(cB, 10);
+        if (!esIPv4Valida(ipA) || !esIPv4Valida(ipB) || !Number.isInteger(a) || !Number.isInteger(b)) return false;
+        const m = ipToInt(calcularMascara(Math.min(a, b)));
+        return ((ipToInt(ipA.split('.').map(Number)) & m) >>> 0) === ((ipToInt(ipB.split('.').map(Number)) & m) >>> 0);
+    }
+
+    // Bits de host mínimos para alojar h hosts (bloque mínimo /30)
+    function bitsParaHosts(h) {
+        let k = 2;
+        while (Math.pow(2, k) - 2 < h && k < 32) k++;
+        return k;
+    }
+
+    function guardarSubneteoStorage() {
+        try {
+            localStorage.setItem('ipcalc_subneteo', JSON.stringify({
+                red: subRedBase.value, cidr: subCidrBase.value, metodo: subMetodo.value, filas: subFilas
+            }));
+        } catch (e) { }
+    }
+
+    function cargarSubneteoStorage() {
+        try {
+            const d = JSON.parse(localStorage.getItem('ipcalc_subneteo'));
+            if (d && typeof d === "object") {
+                if (typeof d.red === "string") subRedBase.value = d.red;
+                if (typeof d.cidr === "string") subCidrBase.value = d.cidr;
+                if (d.metodo === "vlsm" || d.metodo === "flsm") subMetodo.value = d.metodo;
+                if (Array.isArray(d.filas)) {
+                    subFilas = d.filas.filter(f => f && typeof f === "object").map(f => ({
+                        sitio: String(f.sitio ?? ""), vlanId: String(f.vlanId ?? ""), nombre: String(f.nombre ?? ""), hosts: String(f.hosts ?? "")
+                    }));
+                }
+            }
+        } catch (e) { }
+        actualizarAyudaMetodo();
+        renderizarFilasSubneteo();
+    }
+
+    function actualizarAyudaMetodo() {
+        subAyudaMetodo.textContent = subMetodo.value === "vlsm"
+            ? "VLSM: cada subred recibe el bloque más chico que alcance para sus hosts. Se asignan de mayor a menor; si empatan, se agrupan por Red / Sitio en el orden en que las capturaste."
+            : "FLSM: la red se parte en subredes iguales (2^n ≥ número de filas), agrupadas por Red / Sitio. Los hosts son opcionales y solo se usan para verificar que quepan.";
+    }
+
+    function invalidarResultadoSubneteo() {
+        subResultado = null;
+        resultadoSubneteo.innerHTML = "";
+    }
+
+    function renderizarFilasSubneteo() {
+        if (subFilas.length === 0) {
+            subFilasBody.innerHTML = `<tr><td colspan="6" class="text-muted fst-italic py-3">Agrega subredes con el formulario de arriba. Puedes repetir el mismo VLAN ID en distintas redes.</td></tr>`;
+        } else {
+            subFilasBody.innerHTML = subFilas.map((f, i) => `
+                <tr>
+                    <td class="text-muted">${i + 1}</td>
+                    <td><input type="text" class="form-control form-control-sm font-monospace sub-campo" data-index="${i}" data-campo="sitio" value="${esc(f.sitio)}" placeholder="—"></td>
+                    <td><input type="number" class="form-control form-control-sm font-monospace sub-campo" data-index="${i}" data-campo="vlanId" value="${esc(f.vlanId)}" min="1" max="4094" placeholder="—"></td>
+                    <td><input type="text" class="form-control form-control-sm sub-campo" data-index="${i}" data-campo="nombre" value="${esc(f.nombre)}"></td>
+                    <td><input type="number" class="form-control form-control-sm font-monospace sub-campo" data-index="${i}" data-campo="hosts" value="${esc(f.hosts)}" min="0" placeholder="${subMetodo.value === 'flsm' ? 'Opcional' : ''}"></td>
+                    <td><button class="btn btn-sm btn-outline-danger fw-bold btn-sub-quitar" type="button" data-index="${i}">X</button></td>
+                </tr>`).join('');
+        }
+        guardarSubneteoStorage();
+    }
+
+    function agregarFilasSubneteo() {
+        const vidTxt = subVlanId.value.trim();
+        const vid = parseInt(vidTxt, 10);
+        const sitios = subSitio.value.split(',').map(s => s.trim()).filter(s => s !== "");
+        const nombre = subNombre.value.trim();
+        const hostsTxt = subHosts.value.trim();
+        const cantTxt = subCantidad.value.trim() || "1";
+        const cant = parseInt(cantTxt, 10);
+
+        if (vidTxt !== "" && (!/^\d+$/.test(vidTxt) || vid < 1 || vid > 4094)) { alert("El VLAN ID debe estar entre 1 y 4094 (o vacío para una red sin VLAN)."); return; }
+        if (nombre === "" && sitios.length === 0) { alert("Escribe al menos la Red / Sitio o un nombre."); return; }
+        if (hostsTxt !== "" && !/^\d+$/.test(hostsTxt)) { alert("Los hosts deben ser un número entero (0 o más)."); return; }
+        if (subMetodo.value === "vlsm" && (hostsTxt === "" || parseInt(hostsTxt, 10) < 1)) { alert("En VLSM indica cuántos hosts necesita cada subred."); return; }
+        if (!/^\d+$/.test(cantTxt) || cant < 1 || cant > 256) { alert("La cantidad debe estar entre 1 y 256."); return; }
+
+        (sitios.length > 0 ? sitios : [""]).forEach(sitio => {
+            for (let i = 0; i < cant; i++) subFilas.push({ sitio, vlanId: vidTxt, nombre, hosts: hostsTxt });
+        });
+
+        // Se conservan Red / Sitio y VLAN ID para seguir agregando rápido (ej. la VLAN 20 en las mismas redes)
+        subNombre.value = "";
+        subHosts.value = "";
+        subCantidad.value = "1";
+        subNombre.focus();
+        invalidarResultadoSubneteo();
+        renderizarFilasSubneteo();
+    }
+
+    // Agrega enlaces punto a punto entre routers: sin VLAN, 2 hosts (→ /30)
+    function agregarSerialesSubneteo() {
+        const txt = subSerialesCant.value.trim();
+        const cant = parseInt(txt, 10);
+        if (!/^\d+$/.test(txt) || cant < 1 || cant > 64) { alert("La cantidad de enlaces seriales debe estar entre 1 y 64."); return; }
+        let siguiente = 1;
+        const usados = new Set(subFilas.map(f => f.sitio.trim().toUpperCase()));
+        for (let i = 0; i < cant; i++) {
+            while (usados.has(`S${siguiente}`)) siguiente++;
+            usados.add(`S${siguiente}`);
+            subFilas.push({ sitio: `S${siguiente}`, vlanId: "", nombre: "Enlace serial", hosts: "2" });
+        }
+        invalidarResultadoSubneteo();
+        renderizarFilasSubneteo();
+    }
+
+    function calcularSubneteo() {
+        const ip = subRedBase.value.trim();
+        const cidrTxt = subCidrBase.value.trim();
+        const metodo = subMetodo.value;
+
+        if (!esIPv4Valida(ip) || !/^\d{1,2}$/.test(cidrTxt) || parseInt(cidrTxt, 10) > 32) {
+            mostrarMensaje(resultadoSubneteo, "Ingresa una red base IPv4 válida y un prefijo CIDR de 0 a 32.", "danger");
+            return;
+        }
+        const cidr = parseInt(cidrTxt, 10);
+        if (subFilas.length === 0) {
+            mostrarMensaje(resultadoSubneteo, "Agrega al menos una subred a la lista.", "warning");
+            return;
+        }
+
+        const baseInt = ipToInt(ip.split('.').map(Number));
+        const netInt = (baseInt & ipToInt(calcularMascara(cidr))) >>> 0;
+        if (netInt !== baseInt) {
+            mostrarMensaje(resultadoSubneteo, `La dirección <strong>${esc(ip)}/${cidr}</strong> tiene bits de host activos. La red base correcta es <strong>${intToIp(netInt).join('.')}/${cidr}</strong>.`, "danger");
+            return;
+        }
+        const totalBase = Math.pow(2, 32 - cidr);
+        const finBase = netInt + totalBase; // exclusivo
+
+        const filas = [];
+        const ordenSitio = new Map(); // orden de primera aparición de cada Red / Sitio
+        for (let i = 0; i < subFilas.length; i++) {
+            const f = subFilas[i];
+            const vTxt = String(f.vlanId).trim();
+            const vid = vTxt === "" ? null : parseInt(vTxt, 10);
+            const sitio = String(f.sitio ?? "").trim();
+            const nombre = String(f.nombre).trim();
+            const hTxt = String(f.hosts).trim();
+            if (vid !== null && (!/^\d+$/.test(vTxt) || vid < 1 || vid > 4094)) { mostrarMensaje(resultadoSubneteo, `Fila ${i + 1}: el VLAN ID debe estar entre 1 y 4094 (o vacío).`, "danger"); return; }
+            if (nombre === "" && sitio === "") { mostrarMensaje(resultadoSubneteo, `Fila ${i + 1}: escribe la Red / Sitio o un nombre.`, "danger"); return; }
+            if (hTxt !== "" && !/^\d+$/.test(hTxt)) { mostrarMensaje(resultadoSubneteo, `Fila ${i + 1}: los hosts deben ser un número entero.`, "danger"); return; }
+            const h = hTxt === "" ? 0 : parseInt(hTxt, 10);
+            if (metodo === "vlsm" && h < 1) { mostrarMensaje(resultadoSubneteo, `Fila ${i + 1}: en VLSM debes indicar los hosts requeridos.`, "danger"); return; }
+            const clave = sitio.toLowerCase();
+            if (!ordenSitio.has(clave)) ordenSitio.set(clave, ordenSitio.size);
+            filas.push({ orden: i, grupo: ordenSitio.get(clave), sitio, vlanId: vid, nombre: nombre || sitio, hosts: h, bits: bitsParaHosts(h) });
+        }
+
+        const asignadas = [];
+        const baseTxt = `${intToIp(netInt).join('.')}/${cidr}`;
+
+        if (metodo === "vlsm") {
+            // Mayor a menor; en empate se mantienen juntas las subredes de la misma Red / Sitio
+            const ordenadas = [...filas].sort((a, b) => b.hosts - a.hosts || a.grupo - b.grupo || a.orden - b.orden);
+            let cursor = netInt;
+            for (const f of ordenadas) {
+                const tam = Math.pow(2, f.bits);
+                const prefijo = 32 - f.bits;
+                if (prefijo < cidr || cursor + tam > finBase) {
+                    mostrarMensaje(resultadoSubneteo, `No hay espacio en <strong>${baseTxt}</strong> para "<strong>${esc(f.nombre)}</strong>" (${f.sitio ? esc(f.sitio) + ', ' : ''}${f.vlanId !== null ? `VLAN ${f.vlanId}, ` : ''}${f.hosts} hosts → /${prefijo}). Usa una red base más grande o reduce los hosts.`, "danger");
+                    return;
+                }
+                asignadas.push({ ...f, redInt: cursor, prefijo, tam });
+                cursor += tam;
+            }
+        } else {
+            const bitsSub = Math.ceil(Math.log2(filas.length));
+            const prefijo = cidr + bitsSub;
+            const maxBits = Math.max(...filas.map(f => f.bits));
+            if (prefijo > 30 || 32 - prefijo < maxBits) {
+                const hostsPorSub = prefijo <= 30 ? Math.pow(2, 32 - prefijo) - 2 : 0;
+                const mayor = Math.max(...filas.map(f => f.hosts));
+                mostrarMensaje(resultadoSubneteo, `Con FLSM, partir <strong>${baseTxt}</strong> en ${filas.length} subredes da <strong>/${prefijo}</strong> (${hostsPorSub} hosts c/u)${mayor > 0 ? `, pero la subred más grande necesita ${mayor} hosts` : ''}. Usa una red base más grande o VLSM.`, "danger");
+                return;
+            }
+            const tam = Math.pow(2, 32 - prefijo);
+            [...filas].sort((a, b) => a.grupo - b.grupo || a.orden - b.orden)
+                .forEach((f, i) => asignadas.push({ ...f, redInt: netInt + i * tam, prefijo, tam }));
+        }
+
+        const usadas = asignadas.reduce((acc, a) => acc + a.tam, 0);
+        subResultado = {
+            base: baseTxt,
+            metodo,
+            total: totalBase,
+            usadas,
+            siguienteLibre: usadas < totalBase ? intToIp(netInt + usadas).join('.') : null,
+            guardado: false,
+            subredes: asignadas.map(a => ({ ...crearDatosRed(a.redInt, a.prefijo, a.vlanId, a.sitio), cliente: a.nombre, hostsReq: a.hosts }))
+        };
+        renderizarResultadoSubneteo();
+    }
+
+    function renderizarResultadoSubneteo() {
+        const r = subResultado;
+        if (!r) { resultadoSubneteo.innerHTML = ""; return; }
+        const pct = Math.round((r.usadas / r.total) * 1000) / 10;
+
+        const filasHtml = r.subredes.map(s => {
+            const uso = s.hostsCrudo > 0 && s.hostsReq > 0 ? Math.round((s.hostsReq / s.hostsCrudo) * 100) : null;
+            return `
+                <tr>
+                    <td class="fw-bold">${s.sitio ? esc(s.sitio) : '<span class="text-muted">—</span>'}</td>
+                    <td class="fw-bold text-danger">${s.vlanId === null ? '<span class="text-muted">—</span>' : esc(s.vlanId)}</td>
+                    <td class="fw-bold text-primary">${esc(s.cliente)}</td>
+                    <td>${s.hostsReq > 0 ? esc(s.hostsReq) : '—'}</td>
+                    <td><span class="badge bg-secondary copy-click" data-copy="${esc(s.direccion.split('/')[0])}" title="Clic para copiar">${esc(s.direccion)}</span></td>
+                    <td><span class="copy-click" title="Clic para copiar">${esc(s.mascara)}</span></td>
+                    <td><span class="copy-click" title="Clic para copiar">${esc(s.hostMin)}</span></td>
+                    <td><span class="copy-click fw-bold text-success" title="Clic para copiar">${esc(s.hostMax)}</span></td>
+                    <td><span class="copy-click" title="Clic para copiar">${esc(s.broadcast)}</span></td>
+                    <td>${esc(s.hosts)}${uso !== null ? ` <small class="text-muted">(${uso}%)</small>` : ''}</td>
+                </tr>`;
+        }).join('');
+
+        resultadoSubneteo.innerHTML = `
+            <div class="alert alert-success py-2 small mb-2">
+                <strong>${r.metodo.toUpperCase()}</strong> sobre <strong>${esc(r.base)}</strong>: ${r.subredes.length} subred(es),
+                ${r.usadas.toLocaleString()} de ${r.total.toLocaleString()} direcciones usadas (${pct}%).
+                ${r.siguienteLibre ? `Siguiente red libre: <strong class="copy-click" title="Clic para copiar">${esc(r.siguienteLibre)}</strong>` : 'Sin espacio libre.'}
+            </div>
+            <div class="table-responsive border rounded">
+                <table class="table table-sm table-hover align-middle mb-0 text-center" style="font-size: 0.85rem;">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Red / Sitio</th><th>VLAN</th><th>Nombre</th><th>Hosts req.</th><th>Red</th><th>Máscara</th>
+                            <th>Primer Host</th><th>Último Host / GW</th><th>Broadcast</th><th>Hosts disp.</th>
+                        </tr>
+                    </thead>
+                    <tbody>${filasHtml}</tbody>
+                </table>
+            </div>
+            <div class="d-flex flex-wrap gap-2 mt-3">
+                <button class="btn btn-warning fw-bold flex-grow-1 btn-sub-guardar" type="button" ${r.guardado ? 'disabled' : ''}>${r.guardado ? `✅ Guardadas en la lista (${r.subredes.length})` : '💾 Guardar todas a la lista de Nodos / Clientes'}</button>
+                <button class="btn btn-outline-secondary fw-bold btn-sub-copiar-tabla" type="button">📋 Copiar tabla</button>
+            </div>`;
+    }
+
+    function guardarSubneteoEnNodos() {
+        if (!guardEdit()) return;
+        const r = subResultado;
+        if (!r || r.guardado) return;
+
+        const traslapes = [];
+        r.subredes.forEach(s => {
+            const choque = listaNodos.find(n => redesSeTraslapan(n.direccion, s.direccion));
+            if (choque) traslapes.push(`${s.direccion} ↔ ${choque.cliente} (${choque.direccion})`);
+        });
+        if (traslapes.length > 0 && !confirm(`Estas subredes se traslapan con nodos ya guardados:\n\n${traslapes.slice(0, 10).join('\n')}${traslapes.length > 10 ? '\n…' : ''}\n\n¿Guardarlas de todos modos?`)) {
+            return;
+        }
+
+        r.subredes.forEach(s => {
+            const { hostsReq, ...datos } = s;
+            listaNodos.push(normalizarNodo(JSON.parse(JSON.stringify(datos))));
+        });
+        historialBorrados.length = 0;
+        const vidsGuardados = r.subredes.map(s => s.vlanId).filter(v => v !== null);
+        if (vidsGuardados.length > 0) vlanIdCounter = Math.min(Math.max(...vidsGuardados) + 10, 4094);
+        r.guardado = true;
+        renderizarResultadoSubneteo();
+        renderizarTabla();
+        seccionTabla.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    function copiarTablaSubneteo(btn) {
+        const r = subResultado; if (!r) return;
+        const cab = ["Red / Sitio", "VLAN", "Nombre", "Hosts req.", "Red", "Máscara", "Primer Host", "Último Host / GW", "Broadcast", "Hosts disp."];
+        const filas = r.subredes.map(s => [s.sitio, s.vlanId ?? "", s.cliente, s.hostsReq || "", s.direccion, s.mascara, s.hostMin, s.hostMax, s.broadcast, s.hostsCrudo]);
+        const texto = [cab, ...filas].map(f => f.join('\t')).join('\n');
+        copiarAlPortapapeles(texto, btn, "📋 Copiar tabla", "btn-outline-secondary", "btn-success");
+    }
+
+    // Copia el contenido de una celda .copy-click, la marca en verde y muestra un aviso
+    function flashCopia(span) {
+        const texto = span.getAttribute("data-copy") || span.textContent.trim();
+        copiarAlPortapapeles(texto, null, "", "", "", () => {
+            clearTimeout(span._timerCopiado);
+            span.classList.remove("copiado");
+            void span.offsetWidth; // reinicia la animación si se da clic varias veces
+            span.classList.add("copiado");
+            span._timerCopiado = setTimeout(() => span.classList.remove("copiado"), 1500);
+            mostrarAvisoCopia(texto);
+        });
+    }
+
+    let timerAvisoCopia = null;
+    function mostrarAvisoCopia(texto) {
+        let aviso = document.getElementById("avisoCopia");
+        if (!aviso) {
+            aviso = document.createElement("div");
+            aviso.id = "avisoCopia";
+            document.body.appendChild(aviso);
+        }
+        aviso.textContent = `📋 Copiado: ${texto}`;
+        aviso.classList.add("visible");
+        clearTimeout(timerAvisoCopia);
+        timerAvisoCopia = setTimeout(() => aviso.classList.remove("visible"), 1500);
+    }
+
+    // Eventos del subneteo
+    btnSubAgregarFila.addEventListener("click", agregarFilasSubneteo);
+    btnSubAgregarSeriales.addEventListener("click", agregarSerialesSubneteo);
+    subSerialesCant.addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter") { ev.preventDefault(); agregarSerialesSubneteo(); }
+    });
+    [subSitio, subVlanId, subNombre, subHosts, subCantidad].forEach(inp => {
+        inp.addEventListener("keydown", (ev) => {
+            if (ev.key === "Enter") { ev.preventDefault(); agregarFilasSubneteo(); }
+        });
+    });
+    [subRedBase, subCidrBase].forEach(inp => {
+        inp.addEventListener("input", () => { invalidarResultadoSubneteo(); guardarSubneteoStorage(); });
+        inp.addEventListener("keydown", (ev) => {
+            if (ev.key === "Enter") { ev.preventDefault(); calcularSubneteo(); }
+        });
+    });
+    subMetodo.addEventListener("change", () => {
+        actualizarAyudaMetodo();
+        invalidarResultadoSubneteo();
+        renderizarFilasSubneteo();
+    });
+    subFilasBody.addEventListener("input", (ev) => {
+        const t = ev.target;
+        if (!t.classList.contains("sub-campo")) return;
+        const i = parseInt(t.getAttribute("data-index"), 10);
+        const campo = t.getAttribute("data-campo");
+        if (subFilas[i] && ["sitio", "vlanId", "nombre", "hosts"].includes(campo)) {
+            subFilas[i][campo] = t.value;
+            invalidarResultadoSubneteo();
+            guardarSubneteoStorage();
+        }
+    });
+    subFilasBody.addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter" && ev.target.classList.contains("sub-campo")) { ev.preventDefault(); calcularSubneteo(); }
+    });
+    subFilasBody.addEventListener("click", (ev) => {
+        const btn = ev.target.closest(".btn-sub-quitar");
+        if (!btn) return;
+        subFilas.splice(parseInt(btn.getAttribute("data-index"), 10), 1);
+        invalidarResultadoSubneteo();
+        renderizarFilasSubneteo();
+    });
+    btnSubCalcular.addEventListener("click", calcularSubneteo);
+    btnSubLimpiarFilas.addEventListener("click", () => {
+        if (subFilas.length === 0 || !confirm("¿Borrar todas las filas del subneteo?")) return;
+        subFilas = [];
+        invalidarResultadoSubneteo();
+        renderizarFilasSubneteo();
+    });
+    resultadoSubneteo.addEventListener("click", (ev) => {
+        const span = ev.target.closest(".copy-click");
+        if (span) { flashCopia(span); return; }
+        if (ev.target.closest(".btn-sub-guardar")) { guardarSubneteoEnNodos(); return; }
+        const btnCopiar = ev.target.closest(".btn-sub-copiar-tabla");
+        if (btnCopiar) copiarTablaSubneteo(btnCopiar);
+    });
+
+    // =====================================================================
+    // --- SWITCH COMPLETO (todas las VLANs de la tabla) ---
+    // =====================================================================
+    function estadoSwitchGlobalVacio() {
+        return {
+            hostname: "", multicapa: false, portfast: true, vlans: {},
+            trunk: "", nativa: "", allowed: true,
+            mgmtVlan: "", mgmtIp: "", mgmtMask: "", mgmtGw: "",
+            enable: "", consola: "", vty: "", encrypt: false, banner: "",
+            script: null
+        };
+    }
+
+    // Normaliza una configuración de switch leída de localStorage
+    function normalizarCfgSwitch(d) {
+        const base = estadoSwitchGlobalVacio();
+        if (!d || typeof d !== "object") return base;
+        Object.keys(base).forEach(k => {
+            if (k === "vlans") return;
+            if (typeof base[k] === "boolean" && typeof d[k] === "boolean") base[k] = d[k];
+            else if (typeof base[k] === "string" && d[k] != null && typeof d[k] !== "object") base[k] = String(d[k]);
+            else if (k === "script" && typeof d[k] === "string") base[k] = d[k];
+        });
+        if (d.vlans && typeof d.vlans === "object") {
+            Object.entries(d.vlans).forEach(([id, c]) => {
+                if (c && typeof c === "object") {
+                    base.vlans[id] = { incluir: c.incluir !== false, nombre: String(c.nombre ?? ""), puertos: String(c.puertos ?? "") };
+                }
+            });
+        }
+        return base;
+    }
+
+    function guardarSwitchGlobalStorage() {
+        try { localStorage.setItem('ipcalc_switch_global', JSON.stringify(swgTodos)); } catch (e) { }
+    }
+
+    function cargarSwitchGlobalStorage() {
+        swgTodos = { seleccionado: null, oculto: false, sitios: {} };
+        try {
+            const d = JSON.parse(localStorage.getItem('ipcalc_switch_global'));
+            if (d && typeof d === "object") {
+                if (d.sitios && typeof d.sitios === "object") {
+                    Object.entries(d.sitios).forEach(([s, cfg]) => { swgTodos.sitios[s] = normalizarCfgSwitch(cfg); });
+                    swgTodos.seleccionado = typeof d.seleccionado === "string" ? d.seleccionado : null;
+                    swgTodos.oculto = d.oculto === true;
+                } else {
+                    // Formato anterior (un solo switch): pasa a la red "sin sitio"
+                    swgTodos.sitios[""] = normalizarCfgSwitch(d);
+                    swgTodos.oculto = d.oculto === true;
+                }
+            }
+        } catch (e) { }
+        cuerpoSwitchGlobal.style.display = swgTodos.oculto ? "none" : "block";
+        btnToggleSwitchGlobal.textContent = swgTodos.oculto ? "Mostrar" : "Ocultar";
+    }
+
+    // Cambia la configuración activa al switch de la red indicada y refresca el formulario
+    function activarSitioSwitch(sitio) {
+        if (!swgTodos.sitios[sitio]) swgTodos.sitios[sitio] = estadoSwitchGlobalVacio();
+        swgTodos.seleccionado = sitio;
+        swg = swgTodos.sitios[sitio];
+        cuerpoSwitchGlobal.querySelectorAll("[data-swg]").forEach(el => {
+            const k = el.getAttribute("data-swg");
+            if (el.type === "checkbox") el.checked = !!swg[k];
+            else el.value = swg[k] ?? "";
+        });
+        terminalSwitchGlobal.textContent = swg.script || TEXTO_SWITCH_GLOBAL_VACIO;
+    }
+
+    function cfgVlan(id) {
+        const k = String(id);
+        if (!swg.vlans[k]) swg.vlans[k] = { incluir: true, nombre: "", puertos: "" };
+        return swg.vlans[k];
+    }
+
+    function esVlanReservada(id) {
+        return id === 1 || (id >= 1002 && id <= 1005);
+    }
+
+    function etiquetaSitio(sitio) {
+        return sitio === "" ? "(Sin red asignada)" : sitio;
+    }
+
+    // Redes / sitios que tienen al menos una VLAN (son las que llevan switch)
+    function sitiosConVlan() {
+        const vistos = [];
+        listaNodos.forEach(n => {
+            if (n.vlanId !== null && !vistos.includes(n.sitio)) vistos.push(n.sitio);
+        });
+        return vistos;
+    }
+
+    // Agrupa por VLAN ID los nodos del switch activo: varias subredes con el mismo ID = una VLAN
+    function agruparVlansDeNodos() {
+        const sitio = swgTodos.seleccionado ?? "";
+        const mapa = new Map();
+        listaNodos.forEach(n => {
+            if (n.vlanId === null || n.sitio !== sitio) return;
+            const id = Number(n.vlanId);
+            if (!mapa.has(id)) mapa.set(id, { id, nombreDefault: nombreVlanCisco(n.cliente, id), redes: [] });
+            mapa.get(id).redes.push(n.direccion);
+        });
+        return [...mapa.values()].sort((a, b) => a.id - b.id);
+    }
+
+    function nombreVlanSwitch(grupo) {
+        const c = cfgVlan(grupo.id);
+        return c.nombre.trim() !== "" ? nombreVlanCisco(c.nombre, grupo.id) : grupo.nombreDefault;
+    }
+
+    function renderizarSwitchGlobal() {
+        const sitios = sitiosConVlan();
+        if (sitios.length === 0) {
+            seccionSwitchGlobal.style.display = "none";
+            return;
+        }
+        seccionSwitchGlobal.style.display = "flex";
+
+        const sel = sitios.includes(swgTodos.seleccionado) ? swgTodos.seleccionado : sitios[0];
+        swgSitio.innerHTML = sitios.map(s => `<option value="${esc(s)}" ${s === sel ? 'selected' : ''}>${esc(etiquetaSitio(s))}</option>`).join('');
+        if (swg !== swgTodos.sitios[sel] || swgTodos.seleccionado !== sel) activarSitioSwitch(sel);
+
+        const grupos = agruparVlansDeNodos();
+        swgVlansBody.innerHTML = grupos.map(g => {
+            const c = cfgVlan(g.id);
+            const reservada = esVlanReservada(g.id);
+            return `
+                <tr>
+                    <td><input class="form-check-input swg-vlan-campo" type="checkbox" data-vid="${g.id}" data-campo="incluir" ${c.incluir ? 'checked' : ''}></td>
+                    <td class="fw-bold text-danger">${g.id}${g.redes.length > 1 ? ` <span class="badge bg-warning text-dark" title="Subredes de esta VLAN en esta red">×${g.redes.length}</span>` : ''}</td>
+                    <td><input type="text" class="form-control form-control-sm font-monospace swg-vlan-campo" data-vid="${g.id}" data-campo="nombre" value="${esc(c.nombre)}" placeholder="${esc(g.nombreDefault)}" ${reservada ? 'disabled title="VLAN reservada de Cisco: no se puede renombrar"' : ''}></td>
+                    <td class="small font-monospace text-muted text-start">${g.redes.map(d => `<span class="copy-click" data-copy="${esc(String(d).split('/')[0])}" title="Clic para copiar la red">${esc(d)}</span>`).join('<br>')}</td>
+                    <td><input type="text" class="form-control form-control-sm font-monospace swg-vlan-campo" data-vid="${g.id}" data-campo="puertos" value="${esc(c.puertos)}" placeholder="Ej. fa0/1-12" autocomplete="off"></td>
+                </tr>`;
+        }).join('');
+    }
+
+    // "fa0/1-5, fa0/10" -> ["fa0/1-5", "fa0/10"] (validado)
+    function parsearListaPuertosSwitch(texto, etiqueta) {
+        const items = String(texto || "").split(',').map(s => canonIntf(s)).filter(s => s !== "");
+        const regex = /^(?:fa|g)\d+\/\d+(?:\/\d+)?(?:-\d+)?$/;
+        for (const p of items) {
+            const r = parsearRangoPuerto(p);
+            if (!regex.test(p) || !r || r.ini > r.fin) {
+                throw new Error(`${etiqueta}: el puerto "${p}" no es válido. Ejemplos: fa0/1, fa0/1-10, g0/1.`);
+            }
+            if (r.ini === 0) {
+                throw new Error(`${etiqueta}: "${p}" usa el puerto 0, que no existe en switches Cisco (inician en 1, ej. fa0/1).`);
+            }
+        }
+        return items;
+    }
+
+    function lineaInterfazSwitch(p) {
+        const nombre = formatearInterfazCisco(p, false);
+        return p.includes("-") ? `interface range ${nombre}\n` : `interface ${nombre}\n`;
+    }
+
+    function generarSwitchGlobalHandler() {
+        if (!guardEdit()) return;
+        let cli = "";
+        try {
+            const grupos = agruparVlansDeNodos();
+            const incluidas = grupos.filter(g => cfgVlan(g.id).incluir);
+
+            const hostname = swg.hostname.trim();
+            if (hostname !== "" && !/^[A-Za-z][A-Za-z0-9-]{0,62}$/.test(hostname)) {
+                throw new Error("El hostname debe iniciar con letra y solo llevar letras, números o guiones (sin espacios).");
+            }
+
+            const leerVlan = (txt, etiqueta) => {
+                const t = String(txt).trim();
+                if (t === "") return null;
+                const n = parseInt(t, 10);
+                if (!/^\d+$/.test(t) || n < 1 || n > 4094) throw new Error(`La ${etiqueta} debe estar entre 1 y 4094.`);
+                return n;
+            };
+            const nativa = leerVlan(swg.nativa, "VLAN nativa");
+            const mgmt = leerVlan(swg.mgmtVlan, "VLAN de gestión");
+
+            let mgmtIp = "", mgmtMask = "", mgmtGw = "";
+            if (mgmt !== null) {
+                mgmtIp = swg.mgmtIp.trim(); mgmtMask = swg.mgmtMask.trim(); mgmtGw = swg.mgmtGw.trim();
+                if (!esIPv4Valida(mgmtIp)) throw new Error("Gestión: la IP del switch no es válida.");
+                if (!esMascaraValida(mgmtMask)) throw new Error("Gestión: la máscara no es válida.");
+                const ipI = ipToInt(mgmtIp.split('.').map(Number));
+                const mI = ipToInt(mgmtMask.split('.').map(Number));
+                const redI = (ipI & mI) >>> 0, bcI = (redI | (~mI >>> 0)) >>> 0;
+                if (contarBitsMascara(mgmtMask.split('.').map(Number)) < 31 && (ipI === redI || ipI === bcI)) {
+                    throw new Error("Gestión: la IP del switch no puede ser la dirección de red ni la de broadcast.");
+                }
+                if (mgmtGw !== "") {
+                    if (!esIPv4Valida(mgmtGw)) throw new Error("Gestión: el default gateway no es válido.");
+                    if (((ipToInt(mgmtGw.split('.').map(Number)) & mI) >>> 0) !== redI) throw new Error("Gestión: el default gateway no está en la misma subred que la IP del switch.");
+                    if (mgmtGw === mgmtIp) throw new Error("Gestión: el default gateway no puede ser la misma IP del switch.");
+                }
+            } else if (swg.mgmtIp.trim() !== "") {
+                throw new Error("Gestión: escribiste una IP pero falta la VLAN de gestión.");
+            }
+
+            const pass = { enable: swg.enable.trim(), consola: swg.consola.trim(), vty: swg.vty.trim() };
+            if (Object.values(pass).some(p => /\s/.test(p))) throw new Error("Las contraseñas no deben llevar espacios.");
+            const banner = swg.banner.trim();
+            if (banner.includes("#")) throw new Error("El banner no puede contener el carácter # (se usa como delimitador).");
+
+            if (incluidas.length === 0 && nativa === null && mgmt === null) {
+                throw new Error("Marca al menos una VLAN en la columna \"Incluir\".");
+            }
+
+            // Puertos y detección de traslapes entre VLANs / troncales
+            const asignados = [];
+            const registrar = (p, dueno) => {
+                const r = parsearRangoPuerto(p);
+                const c = asignados.find(a => a.r.base === r.base && a.r.ini <= r.fin && r.ini <= a.r.fin);
+                if (c) throw new Error(`El puerto ${p.toUpperCase()} (${dueno}) se traslapa con ${c.p.toUpperCase()} (${c.dueno}).`);
+                asignados.push({ p, r, dueno });
+            };
+            const accesos = incluidas.map(g => {
+                const puertos = parsearListaPuertosSwitch(cfgVlan(g.id).puertos, `VLAN ${g.id}`);
+                puertos.forEach(p => registrar(p, `acceso VLAN ${g.id}`));
+                return { g, puertos };
+            });
+            const troncales = parsearListaPuertosSwitch(swg.trunk, "Troncal");
+            troncales.forEach(p => registrar(p, "troncal"));
+
+            const nombrePorId = (id, porDefecto) => {
+                const g = grupos.find(x => x.id === id);
+                return g ? nombreVlanSwitch(g) : porDefecto;
+            };
+
+            cli = "enable\nconfigure terminal\n";
+            if (hostname !== "") cli += `hostname ${hostname}\n`;
+            cli += "no ip domain-lookup\n";
+            if (pass.enable) cli += `enable secret ${pass.enable}\n`;
+            if (pass.consola) cli += `line console 0\npassword ${pass.consola}\nlogin\nexit\n`;
+            if (pass.vty) cli += `line vty 0 15\npassword ${pass.vty}\nlogin\nexit\n`;
+            if (swg.encrypt) cli += "service password-encryption\n";
+            if (banner) cli += `banner motd #${banner}#\n`;
+
+            // VLANs (una sola vez por ID, aunque haya varias subredes)
+            const creadas = new Set();
+            const crearVlan = (id, nombre) => {
+                if (creadas.has(id)) return;
+                creadas.add(id);
+                if (esVlanReservada(id)) return;
+                cli += `vlan ${id}\nname ${nombre}\nexit\n`;
+            };
+            incluidas.forEach(g => crearVlan(g.id, nombreVlanSwitch(g)));
+            if (nativa !== null) crearVlan(nativa, nombrePorId(nativa, "NATIVA"));
+            if (mgmt !== null) crearVlan(mgmt, nombrePorId(mgmt, "GESTION"));
+
+            // Puertos de acceso
+            accesos.forEach(({ g, puertos }) => {
+                puertos.forEach(p => {
+                    cli += lineaInterfazSwitch(p);
+                    cli += `switchport mode access\nswitchport access vlan ${g.id}\n`;
+                    if (swg.portfast) cli += "spanning-tree portfast\n";
+                    cli += "no shutdown\nexit\n";
+                });
+            });
+
+            // Troncales
+            const permitidas = [...new Set([...incluidas.map(g => g.id), ...(nativa !== null ? [nativa] : []), ...(mgmt !== null ? [mgmt] : [])])].sort((a, b) => a - b);
+            troncales.forEach(p => {
+                cli += lineaInterfazSwitch(p);
+                if (swg.multicapa) cli += "switchport trunk encapsulation dot1q\n";
+                cli += "switchport mode trunk\n";
+                if (nativa !== null) cli += `switchport trunk native vlan ${nativa}\n`;
+                if (swg.allowed && permitidas.length > 0) cli += `switchport trunk allowed vlan ${permitidas.join(',')}\n`;
+                cli += "no shutdown\nexit\n";
+            });
+
+            // SVI de gestión
+            if (mgmt !== null) {
+                cli += `interface vlan ${mgmt}\nip address ${mgmtIp} ${mgmtMask}\nno shutdown\nexit\n`;
+                if (mgmtGw !== "") cli += `ip default-gateway ${mgmtGw}\n`;
+            }
+
+            cli += "exit\nwrite memory\n";
+        } catch (err) {
+            alert(err.message);
+            return;
+        }
+
+        terminalSwitchGlobal.textContent = cli;
+        swg.script = cli;
+        guardarSwitchGlobalStorage();
+    }
+
+    // Eventos del switch completo
+    cuerpoSwitchGlobal.addEventListener("input", manejarCambioSwitchGlobal);
+    cuerpoSwitchGlobal.addEventListener("change", manejarCambioSwitchGlobal);
+
+    function manejarCambioSwitchGlobal(ev) {
+        const t = ev.target;
+        const clave = t.getAttribute("data-swg");
+        if (clave) {
+            swg[clave] = t.type === "checkbox" ? t.checked : t.value;
+            // Al elegir VLAN de gestión, sugerir máscara y gateway de esa VLAN
+            if (clave === "mgmtVlan" && ev.type === "change") {
+                const nodo = listaNodos.find(n => n.vlanId !== null && String(n.vlanId) === t.value.trim() && n.sitio === (swgTodos.seleccionado ?? ""));
+                if (nodo) {
+                    if (!swg.mgmtMask.trim()) { swg.mgmtMask = nodo.mascara; document.getElementById("swgMgmtMask").value = nodo.mascara; }
+                    if (!swg.mgmtGw.trim()) { swg.mgmtGw = nodo.hostMax; document.getElementById("swgMgmtGw").value = nodo.hostMax; }
+                }
+            }
+        } else if (t.classList.contains("swg-vlan-campo")) {
+            const c = cfgVlan(t.getAttribute("data-vid"));
+            const campo = t.getAttribute("data-campo");
+            if (campo === "incluir") c.incluir = t.checked;
+            else if (campo === "nombre" || campo === "puertos") c[campo] = t.value;
+        } else {
+            return;
+        }
+        guardarSwitchGlobalStorage();
+    }
+
+    cuerpoSwitchGlobal.addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter" && ev.target.tagName === "INPUT" && ev.target.type !== "checkbox") {
+            ev.preventDefault();
+            generarSwitchGlobalHandler();
+        }
+    });
+    btnGenerarSwitchGlobal.addEventListener("click", generarSwitchGlobalHandler);
+    btnCopiarSwitchGlobal.addEventListener("click", () => {
+        copiarAlPortapapeles(terminalSwitchGlobal.textContent, btnCopiarSwitchGlobal, "📋 Copiar Todo", "btn-outline-secondary", "btn-success");
+    });
+    btnToggleSwitchGlobal.addEventListener("click", () => {
+        swgTodos.oculto = !swgTodos.oculto;
+        cuerpoSwitchGlobal.style.display = swgTodos.oculto ? "none" : "block";
+        btnToggleSwitchGlobal.textContent = swgTodos.oculto ? "Mostrar" : "Ocultar";
+        guardarSwitchGlobalStorage();
+    });
+    swgSitio.addEventListener("change", () => {
+        activarSitioSwitch(swgSitio.value);
+        renderizarSwitchGlobal();
+        guardarSwitchGlobalStorage();
+    });
+
+    // =====================================================================
+    // --- CONFIGURACIÓN DE ROUTERS (topología + rutas estáticas) ---
+    // =====================================================================
+    const seccionRouters = document.getElementById("seccionRouters");
+    const cuerpoRouters = document.getElementById("cuerpoRouters");
+    const btnToggleRouters = document.getElementById("btnToggleRouters");
+    const rtSel = document.getElementById("rtSel");
+    const rtNuevoNombre = document.getElementById("rtNuevoNombre");
+    const btnRtAgregar = document.getElementById("btnRtAgregar");
+    const btnRtEliminar = document.getElementById("btnRtEliminar");
+    const rtSinRouters = document.getElementById("rtSinRouters");
+    const rtPanel = document.getElementById("rtPanel");
+    const rtLansBody = document.getElementById("rtLansBody");
+    const rtEnlacesBody = document.getElementById("rtEnlacesBody");
+    const rtAvisos = document.getElementById("rtAvisos");
+    const btnRtGenerar = document.getElementById("btnRtGenerar");
+    const btnRtCopiar = document.getElementById("btnRtCopiar");
+    const terminalRouters = document.getElementById("terminalRouters");
+
+    // rtState.conexiones[clave] = [{ router, intf, dce }]  (LAN: 1 extremo, enlace: 2 extremos)
+    let rtState = { routers: [], sel: null, oculto: false, conexiones: {} };
+
+    function routerVacio(nombre) {
+        return {
+            id: "r" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+            nombre, hostname: nombre.replace(/[^A-Za-z0-9-]/g, "") || "",
+            enrutamiento: "ospf", ospfPid: "1", ospfArea: "0", ospfPasivas: false,
+            dhcp: false, dns: "", helper: "", clock: "64000", script: null
+        };
+    }
+
+    function guardarRoutersStorage() {
+        try { localStorage.setItem('ipcalc_routers', JSON.stringify(rtState)); } catch (e) { }
+    }
+
+    function cargarRoutersStorage() {
+        try {
+            const d = JSON.parse(localStorage.getItem('ipcalc_routers'));
+            if (d && typeof d === "object") {
+                if (Array.isArray(d.routers)) {
+                    rtState.routers = d.routers.filter(r => r && typeof r.id === "string" && typeof r.nombre === "string").map(r => ({
+                        id: r.id, nombre: r.nombre, hostname: String(r.hostname ?? ""),
+                        enrutamiento: ["ospf", "estatico", "ninguno"].includes(r.enrutamiento) ? r.enrutamiento : (r.estatico === false ? "ninguno" : "estatico"),
+                        ospfPid: String(r.ospfPid ?? "1"), ospfArea: String(r.ospfArea ?? "0"), ospfPasivas: r.ospfPasivas === true,
+                        dhcp: r.dhcp === true,
+                        dns: String(r.dns ?? ""), helper: String(r.helper ?? ""), clock: String(r.clock ?? "64000"),
+                        script: typeof r.script === "string" ? r.script : null
+                    }));
+                }
+                if (d.conexiones && typeof d.conexiones === "object") {
+                    Object.entries(d.conexiones).forEach(([k, arr]) => {
+                        if (Array.isArray(arr)) {
+                            rtState.conexiones[k] = arr.filter(x => x && typeof x.router === "string").map(x => ({ router: x.router, intf: String(x.intf ?? ""), dce: x.dce === true })).slice(0, 2);
+                        }
+                    });
+                }
+                rtState.sel = typeof d.sel === "string" ? d.sel : null;
+                rtState.oculto = d.oculto === true;
+            }
+        } catch (e) { }
+        cuerpoRouters.style.display = rtState.oculto ? "none" : "block";
+        btnToggleRouters.textContent = rtState.oculto ? "Mostrar" : "Ocultar";
+    }
+
+    function routerActual() {
+        return rtState.routers.find(r => r.id === rtState.sel) || null;
+    }
+
+    function nombreRouter(id) {
+        const r = rtState.routers.find(x => x.id === id);
+        return r ? r.nombre : "?";
+    }
+
+    // Agrupa los nodos: por Red / Sitio si tiene, o cada red sola. Un enlace = red sin VLAN /30 o /31
+    function elementosTopologia() {
+        const mapa = new Map();
+        listaNodos.forEach(n => {
+            const clave = n.sitio ? `s:${n.sitio}` : `n:${n.direccion}`;
+            if (!mapa.has(clave)) mapa.set(clave, { clave, etiqueta: n.sitio || n.cliente, nodos: [] });
+            mapa.get(clave).nodos.push(n);
+        });
+        return [...mapa.values()].map(e => {
+            const n0 = e.nodos[0];
+            const prefijo = parseInt(String(n0.direccion).split('/')[1], 10);
+            e.tipo = (e.nodos.length === 1 && n0.vlanId === null && prefijo >= 30) ? "enlace" : "lan";
+            return e;
+        });
+    }
+
+    function extremos(clave) {
+        const ids = new Set(rtState.routers.map(r => r.id));
+        return (rtState.conexiones[clave] || []).filter(x => ids.has(x.router));
+    }
+
+    function renderizarRouters() {
+        if (listaNodos.length === 0) { seccionRouters.style.display = "none"; return; }
+        seccionRouters.style.display = "flex";
+
+        if (!routerActual()) rtState.sel = rtState.routers.length ? rtState.routers[0].id : null;
+        rtSel.innerHTML = rtState.routers.map(r => `<option value="${esc(r.id)}" ${r.id === rtState.sel ? 'selected' : ''}>${esc(r.nombre)}</option>`).join('');
+        rtSel.disabled = rtState.routers.length === 0;
+        btnRtEliminar.disabled = rtState.routers.length === 0;
+
+        const r = routerActual();
+        rtSinRouters.style.display = r ? "none" : "block";
+        rtPanel.style.display = r ? "block" : "none";
+        if (!r) return;
+
+        cuerpoRouters.querySelectorAll("[data-rt]").forEach(el => {
+            const k = el.getAttribute("data-rt");
+            if (el.type === "checkbox") el.checked = !!r[k];
+            else if (document.activeElement !== el) el.value = r[k] ?? "";
+        });
+        terminalRouters.textContent = r.script || TEXTO_ROUTERS_VACIO;
+        document.getElementById("rtOspfCampos").style.display = r.enrutamiento === "ospf" ? "block" : "none";
+
+        const elementos = elementosTopologia();
+        const lans = elementos.filter(e => e.tipo === "lan");
+        const enlaces = elementos.filter(e => e.tipo === "enlace");
+
+        rtLansBody.innerHTML = lans.length === 0
+            ? `<tr><td colspan="3" class="text-muted fst-italic py-2">No hay redes LAN guardadas.</td></tr>`
+            : lans.map(e => {
+                const ex = extremos(e.clave);
+                const mio = ex.find(x => x.router === r.id);
+                const otro = ex.find(x => x.router !== r.id);
+                const subredes = [...e.nodos].sort((a, b) => (a.vlanId ?? -1) - (b.vlanId ?? -1)).map(n =>
+                    `<div><span class="badge ${n.vlanId === null ? 'bg-secondary' : 'bg-danger'}">${esc(etiquetaVlan(n))}</span> <span class="font-monospace copy-click" data-copy="${esc(String(n.direccion).split('/')[0])}" title="Clic para copiar la red">${esc(n.direccion)}</span> <span class="font-monospace copy-click text-muted" title="Clic para copiar la máscara">${esc(n.mascara)}</span> → GW <span class="font-monospace fw-bold text-success copy-click" title="Clic para copiar el gateway">${esc(n.hostMax)}</span></div>`).join('');
+                const celda = otro
+                    ? `<span class="text-muted small">Conectada a <strong>${esc(nombreRouter(otro.router))}</strong> (${esc(otro.intf.toUpperCase())})</span>`
+                    : `<input type="text" class="form-control form-control-sm font-monospace border-success rt-intf" data-clave="${esc(e.clave)}" value="${esc(mio ? mio.intf : '')}" placeholder="Ej. g0/0 (vacío = no está aquí)" autocomplete="off">`;
+                return `<tr><td class="fw-bold">${esc(e.etiqueta)}</td><td class="text-start small">${subredes}</td><td style="min-width: 210px;">${celda}</td></tr>`;
+            }).join('');
+
+        rtEnlacesBody.innerHTML = enlaces.length === 0
+            ? `<tr><td colspan="6" class="text-muted fst-italic py-2">No hay enlaces seriales (redes /30 sin VLAN).</td></tr>`
+            : enlaces.map(e => {
+                const n = e.nodos[0];
+                const ex = extremos(e.clave);
+                const idx = ex.findIndex(x => x.router === r.id);
+                const mio = idx >= 0 ? ex[idx] : null;
+                const otros = ex.filter(x => x.router !== r.id);
+                const lleno = !mio && ex.length >= 2;
+                const ipMia = idx >= 0 ? (idx === 0 ? n.hostMin : n.hostMax) : (ex.length === 0 ? n.hostMin : n.hostMax);
+                const otroTxt = otros.length
+                    ? otros.map(o => `<strong>${esc(nombreRouter(o.router))}</strong> ${esc(o.intf.toUpperCase())} (<span class="font-monospace copy-click" title="Clic para copiar">${esc(ex.indexOf(o) === 0 ? n.hostMin : n.hostMax)}</span>)`).join('<br>')
+                    : '<span class="text-muted">— sin asignar —</span>';
+                const celdaIntf = lleno
+                    ? `<span class="text-muted small">Ya tiene sus 2 extremos</span>`
+                    : `<input type="text" class="form-control form-control-sm font-monospace border-success rt-intf" data-clave="${esc(e.clave)}" value="${esc(mio ? mio.intf : '')}" placeholder="Ej. s0/0/0" autocomplete="off">`;
+                return `<tr>
+                    <td class="fw-bold">${esc(e.etiqueta)}</td>
+                    <td class="font-monospace"><span class="copy-click" data-copy="${esc(String(n.direccion).split('/')[0])}" title="Clic para copiar la red">${esc(n.direccion)}</span><br><span class="copy-click text-muted small" title="Clic para copiar la máscara">${esc(n.mascara)}</span></td>
+                    <td style="min-width: 160px;">${celdaIntf}</td>
+                    <td class="font-monospace fw-bold ${mio ? 'text-success' : 'text-muted'}">${lleno ? '—' : `<span class="copy-click" title="Clic para copiar">${esc(ipMia)}</span>`}</td>
+                    <td>${mio ? `<input class="form-check-input rt-dce" type="checkbox" data-clave="${esc(e.clave)}" ${mio.dce ? 'checked' : ''}>` : ''}</td>
+                    <td class="small">${otroTxt}</td>
+                </tr>`;
+            }).join('');
+
+        const pendientes = elementos.filter(e => extremos(e.clave).length === 0).map(e => e.etiqueta);
+        const enlacesIncompletos = enlaces.filter(e => extremos(e.clave).length === 1).map(e => e.etiqueta);
+        const avisos = [];
+        if (pendientes.length) avisos.push(`Sin router asignado: <strong>${pendientes.map(esc).join(', ')}</strong>.`);
+        if (enlacesIncompletos.length) avisos.push(`Enlaces con un solo extremo (asigna el otro router): <strong>${enlacesIncompletos.map(esc).join(', ')}</strong>.`);
+        rtAvisos.innerHTML = avisos.length ? `<div class="alert alert-warning py-2 small mb-0">${avisos.join('<br>')}</div>` : '';
+    }
+
+    // Calcula las rutas estáticas del router con BFS sobre los enlaces seriales completos
+    function calcularRutasEstaticas(routerId, elementos) {
+        const ady = new Map(rtState.routers.map(r => [r.id, []]));
+        elementos.filter(e => e.tipo === "enlace").forEach(e => {
+            const ex = extremos(e.clave);
+            if (ex.length === 2) {
+                const n = e.nodos[0];
+                ady.get(ex[0].router).push({ vecino: ex[1].router, nexthop: n.hostMax });
+                ady.get(ex[1].router).push({ vecino: ex[0].router, nexthop: n.hostMin });
+            }
+        });
+        const salto = new Map([[routerId, null]]);
+        const dist = new Map([[routerId, 0]]);
+        const cola = [routerId];
+        while (cola.length) {
+            const u = cola.shift();
+            for (const { vecino, nexthop } of ady.get(u) || []) {
+                if (!dist.has(vecino)) {
+                    dist.set(vecino, dist.get(u) + 1);
+                    salto.set(vecino, u === routerId ? nexthop : salto.get(u));
+                    cola.push(vecino);
+                }
+            }
+        }
+        const rutas = [], avisos = [];
+        elementos.forEach(e => {
+            const duenos = extremos(e.clave).map(x => x.router);
+            if (duenos.length === 0 || duenos.includes(routerId)) return;
+            const alcanzables = duenos.filter(id => dist.has(id)).sort((a, b) => dist.get(a) - dist.get(b));
+            if (alcanzables.length === 0) {
+                avisos.push(`No hay camino hacia ${e.etiqueta} (revisa que los seriales tengan sus 2 extremos).`);
+                return;
+            }
+            const nh = salto.get(alcanzables[0]);
+            e.nodos.forEach(n => {
+                const [red] = String(n.direccion).split('/');
+                rutas.push(`ip route ${red} ${n.mascara} ${nh}`);
+            });
+        });
+        return { rutas, avisos };
+    }
+
+    function generarRouterHandler() {
+        if (!guardEdit()) return;
+        const r = routerActual(); if (!r) return;
+        const elementos = elementosTopologia();
+        const avisos = [];
+        let cli = "";
+        try {
+            const hostname = r.hostname.trim();
+            if (hostname !== "" && !/^[A-Za-z][A-Za-z0-9-]{0,62}$/.test(hostname)) throw new Error("El hostname debe iniciar con letra y solo llevar letras, números o guiones.");
+            const clock = r.clock.trim() || "64000";
+            if (!/^\d+$/.test(clock)) throw new Error("El clock rate debe ser un número (ej. 64000).");
+            if (r.dns.trim() && !esIPv4Valida(r.dns.trim())) throw new Error("El DNS no es una IP válida.");
+            if (r.helper.trim() && !esIPv4Valida(r.helper.trim())) throw new Error("El ip helper-address no es una IP válida.");
+            const ospfPid = r.ospfPid.trim() || "1";
+            const ospfArea = r.ospfArea.trim() || "0";
+            if (r.enrutamiento === "ospf") {
+                if (!/^\d+$/.test(ospfPid) || +ospfPid < 1 || +ospfPid > 65535) throw new Error("El ID de proceso OSPF debe estar entre 1 y 65535.");
+                if (!/^\d+$/.test(ospfArea)) throw new Error("El área OSPF debe ser un número (ej. 0).");
+            }
+
+            const misLans = [], misEnlaces = [], usados = new Map();
+            elementos.forEach(e => {
+                const ex = extremos(e.clave);
+                const idx = ex.findIndex(x => x.router === r.id);
+                if (idx < 0) return;
+                const intf = canonIntf(ex[idx].intf);
+                const regex = e.tipo === "lan" ? /^(?:fa|g)\d+\/\d+(?:\/\d+)?$/ : /^(?:fa|g|s)\d+\/\d+(?:\/\d+)?$/;
+                if (!regex.test(intf)) throw new Error(`${e.etiqueta}: el puerto "${ex[idx].intf}" no es válido (${e.tipo === "lan" ? "ej. g0/0, f0/1" : "ej. s0/0/0, s0/1/0"}).`);
+                if (usados.has(intf)) throw new Error(`El puerto ${intf.toUpperCase()} está asignado a ${usados.get(intf)} y a ${e.etiqueta}.`);
+                usados.set(intf, e.etiqueta);
+                if (e.tipo === "lan") misLans.push({ e, intf });
+                else misEnlaces.push({ e, intf, idx, dce: ex[idx].dce });
+            });
+            if (misLans.length === 0 && misEnlaces.length === 0) throw new Error("Este router no tiene redes ni enlaces asignados. Escribe los puertos en las tablas.");
+
+            cli = "enable\nconfigure terminal\n";
+            if (hostname) cli += `hostname ${hostname}\n`;
+            cli += "no ip domain-lookup\n";
+            const helper = r.helper.trim();
+
+            // LANs: IP directa (sin VLAN) y subinterfaces dot1Q (con VLAN)
+            misLans.forEach(({ e, intf }) => {
+                const nombreIntf = formatearInterfazCisco(intf, false);
+                const sinVlan = e.nodos.filter(n => n.vlanId === null);
+                const conVlan = e.nodos.filter(n => n.vlanId !== null).sort((a, b) => a.vlanId - b.vlanId);
+                cli += `interface ${nombreIntf}\n`;
+                if (sinVlan.length) {
+                    sinVlan.forEach((n, i) => { cli += `ip address ${n.hostMax} ${n.mascara}${i > 0 ? ' secondary' : ''}\n`; });
+                    if (helper) cli += `ip helper-address ${helper}\n`;
+                } else {
+                    cli += "no ip address\n";
+                }
+                cli += "no shutdown\nexit\n";
+                const vistas = new Set();
+                conVlan.forEach(n => {
+                    if (!vistas.has(n.vlanId)) {
+                        if (vistas.size > 0) cli += "exit\n";
+                        vistas.add(n.vlanId);
+                        cli += `interface ${nombreIntf}.${n.vlanId}\nencapsulation dot1Q ${n.vlanId}\nip address ${n.hostMax} ${n.mascara}\n`;
+                        if (helper) cli += `ip helper-address ${helper}\n`;
+                    } else {
+                        cli += `ip address ${n.hostMax} ${n.mascara} secondary\n`;
+                    }
+                });
+                if (vistas.size > 0) cli += "exit\n";
+            });
+
+            // Enlaces seriales: el 1er extremo toma el primer host y el 2º el último
+            misEnlaces.forEach(({ e, intf, idx, dce }) => {
+                const n = e.nodos[0];
+                cli += `interface ${formatearInterfazCisco(intf, false)}\nip address ${idx === 0 ? n.hostMin : n.hostMax} ${n.mascara}\n`;
+                if (dce) {
+                    if (intf.startsWith("s")) cli += `clock rate ${clock}\n`;
+                    else avisos.push(`${e.etiqueta}: el clock rate solo aplica a puertos seriales; se omitió en ${intf.toUpperCase()}.`);
+                }
+                cli += "no shutdown\nexit\n";
+                if (extremos(e.clave).length < 2) avisos.push(`${e.etiqueta}: falta asignar el otro router del enlace.`);
+            });
+
+            // DHCP para las LANs de este router
+            if (r.dhcp) {
+                const dns = r.dns.trim();
+                misLans.forEach(({ e }) => {
+                    e.nodos.forEach(n => {
+                        const [red] = String(n.direccion).split('/');
+                        const pool = nombreVlanCisco(`${e.etiqueta}_${n.cliente}${n.vlanId !== null ? '_V' + n.vlanId : ''}`, n.vlanId ?? 0);
+                        cli += `ip dhcp excluded-address ${n.hostMax}\nip dhcp pool ${pool}\nnetwork ${red} ${n.mascara}\ndefault-router ${n.hostMax}\n`;
+                        if (dns) cli += `dns-server ${dns}\n`;
+                        cli += "exit\n";
+                    });
+                });
+            }
+
+            // Enrutamiento: estático (calculado) u OSPF (anuncia sus redes conectadas)
+            if (r.enrutamiento === "estatico") {
+                const { rutas, avisos: avRutas } = calcularRutasEstaticas(r.id, elementos);
+                rutas.forEach(l => { cli += l + "\n"; });
+                avisos.push(...avRutas);
+            } else if (r.enrutamiento === "ospf") {
+                cli += `router ospf ${ospfPid}\n`;
+                const anunciadas = new Set();
+                const anunciar = (n) => {
+                    const [red] = String(n.direccion).split('/');
+                    const wc = calcularWildcard(n.mascara.split('.').map(Number)).join('.');
+                    const linea = `network ${red} ${wc} area ${ospfArea}`;
+                    if (!anunciadas.has(linea)) { anunciadas.add(linea); cli += linea + "\n"; }
+                };
+                misLans.forEach(({ e }) => e.nodos.forEach(anunciar));
+                misEnlaces.forEach(({ e }) => anunciar(e.nodos[0]));
+                if (r.ospfPasivas) {
+                    misLans.forEach(({ e, intf }) => {
+                        const nombreIntf = formatearInterfazCisco(intf, false);
+                        if (e.nodos.some(n => n.vlanId === null)) cli += `passive-interface ${nombreIntf}\n`;
+                        [...new Set(e.nodos.filter(n => n.vlanId !== null).map(n => n.vlanId))].sort((a, b) => a - b)
+                            .forEach(v => { cli += `passive-interface ${nombreIntf}.${v}\n`; });
+                    });
+                }
+                cli += "exit\n";
+                if (misEnlaces.some(({ e }) => extremos(e.clave).length < 2)) avisos.push("OSPF: hay enlaces con un solo extremo; los vecinos OSPF solo se forman cuando ambos routers tienen el serial configurado.");
+            }
+
+            cli += "exit\nwrite memory\n";
+        } catch (err) {
+            alert(err.message);
+            return;
+        }
+        r.script = cli;
+        terminalRouters.textContent = cli;
+        guardarRoutersStorage();
+        if (avisos.length) {
+            rtAvisos.innerHTML = `<div class="alert alert-warning py-2 small mb-0">${avisos.map(esc).join('<br>')}</div>`;
+        } else {
+            renderizarRouters();
+        }
+    }
+
+    function asignarExtremo(clave, intfTxt) {
+        const r = routerActual(); if (!r) return;
+        const arr = (rtState.conexiones[clave] || []).filter(x => rtState.routers.some(rr => rr.id === x.router));
+        const intf = canonIntf(intfTxt);
+        const i = arr.findIndex(x => x.router === r.id);
+        if (intf === "") {
+            if (i >= 0) arr.splice(i, 1);
+        } else if (i >= 0) {
+            arr[i].intf = intf;
+        } else {
+            arr.push({ router: r.id, intf, dce: false });
+        }
+        rtState.conexiones[clave] = arr.slice(0, 2);
+        r.script = null;
+        guardarRoutersStorage();
+        renderizarRouters();
+    }
+
+    // Eventos de routers
+    btnRtAgregar.addEventListener("click", () => {
+        const nombre = rtNuevoNombre.value.trim();
+        if (nombre === "") { alert("Escribe el nombre del router (ej. R0)."); return; }
+        if (rtState.routers.some(r => r.nombre.toLowerCase() === nombre.toLowerCase())) { alert(`Ya existe el router ${nombre}.`); return; }
+        const r = routerVacio(nombre);
+        rtState.routers.push(r);
+        rtState.sel = r.id;
+        rtNuevoNombre.value = "";
+        guardarRoutersStorage();
+        renderizarRouters();
+    });
+    rtNuevoNombre.addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter") { ev.preventDefault(); btnRtAgregar.click(); }
+    });
+    btnRtEliminar.addEventListener("click", () => {
+        const r = routerActual(); if (!r) return;
+        if (!confirm(`¿Eliminar el router ${r.nombre} y sus conexiones?`)) return;
+        rtState.routers = rtState.routers.filter(x => x.id !== r.id);
+        Object.keys(rtState.conexiones).forEach(k => {
+            rtState.conexiones[k] = rtState.conexiones[k].filter(x => x.router !== r.id);
+        });
+        rtState.sel = null;
+        guardarRoutersStorage();
+        renderizarRouters();
+    });
+    rtSel.addEventListener("change", () => {
+        rtState.sel = rtSel.value;
+        guardarRoutersStorage();
+        renderizarRouters();
+    });
+    cuerpoRouters.addEventListener("input", (ev) => {
+        const k = ev.target.getAttribute("data-rt");
+        const r = routerActual();
+        if (!k || !r || ev.target.type === "checkbox") return;
+        r[k] = ev.target.value;
+        if (k !== "enrutamiento") r.script = null;
+        guardarRoutersStorage();
+    });
+    cuerpoRouters.addEventListener("change", (ev) => {
+        const t = ev.target;
+        const r = routerActual(); if (!r) return;
+        const k = t.getAttribute("data-rt");
+        if (k && t.type === "checkbox") {
+            r[k] = t.checked;
+            r.script = null;
+            guardarRoutersStorage();
+        } else if (k === "enrutamiento") {
+            r.enrutamiento = t.value;
+            r.script = null;
+            guardarRoutersStorage();
+            renderizarRouters();
+        } else if (t.classList.contains("rt-intf")) {
+            asignarExtremo(t.getAttribute("data-clave"), t.value);
+        } else if (t.classList.contains("rt-dce")) {
+            const ex = (rtState.conexiones[t.getAttribute("data-clave")] || []).find(x => x.router === r.id);
+            if (ex) { ex.dce = t.checked; guardarRoutersStorage(); }
+        }
+    });
+    cuerpoRouters.addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter" && ev.target.classList.contains("rt-intf")) { ev.preventDefault(); ev.target.blur(); }
+    });
+    btnRtGenerar.addEventListener("click", generarRouterHandler);
+    [cuerpoRouters, swgVlansBody].forEach(cont => {
+        cont.addEventListener("click", (ev) => {
+            const span = ev.target.closest(".copy-click");
+            if (span) flashCopia(span);
+        });
+    });
+    btnRtCopiar.addEventListener("click", () => {
+        copiarAlPortapapeles(terminalRouters.textContent, btnRtCopiar, "📋 Copiar Todo", "btn-outline-secondary", "btn-success");
+    });
+    btnToggleRouters.addEventListener("click", () => {
+        rtState.oculto = !rtState.oculto;
+        cuerpoRouters.style.display = rtState.oculto ? "none" : "block";
+        btnToggleRouters.textContent = rtState.oculto ? "Mostrar" : "Ocultar";
+        guardarRoutersStorage();
     });
 
     // --- Helpers Matemáticos ---
@@ -2352,5 +3581,8 @@ document.addEventListener("DOMContentLoaded", () => {
         contenedor.innerHTML = `<div class="alert alert-${tipo}" role="alert">${html}</div>`;
     }
 
+    cargarSwitchGlobalStorage();
+    cargarRoutersStorage();
+    cargarSubneteoStorage();
     cargarDatosStorage();
 });

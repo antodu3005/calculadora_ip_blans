@@ -6,7 +6,7 @@
     <title>Calculadora IP & Cisco Script Generator</title>
     <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="script/css/style.css" rel="stylesheet">
+    <link href="assets/css/style.css" rel="stylesheet">
 </head>
 <body class="bg-light">
 
@@ -19,10 +19,13 @@
                 <div class="card-header bg-primary text-white">
                     <ul class="nav nav-tabs card-header-tabs" id="menuCalculadora" role="tablist">
                         <li class="nav-item" role="presentation">
-                            <button class="nav-link active" id="estandar-tab" data-bs-toggle="tab" data-bs-target="#estandar" type="button" role="tab" aria-selected="true">Estándar</button>
+                            <button class="nav-link text-dark fw-bold" id="estandar-tab" data-bs-toggle="tab" data-bs-target="#estandar" type="button" role="tab" aria-selected="true">Estándar</button>
                         </li>
                         <li class="nav-item" role="presentation">
-                            <button class="nav-link" id="sustitucion-tab" data-bs-toggle="tab" data-bs-target="#sustitucion" type="button" role="tab" aria-selected="false">Sustitución (XX)</button>
+                            <button class="nav-link text-dark fw-bold" id="sustitucion-tab" data-bs-toggle="tab" data-bs-target="#sustitucion" type="button" role="tab" aria-selected="false">Sustitución (XX)</button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link text-dark fw-bold" id="subneteo-tab" data-bs-toggle="tab" data-bs-target="#subneteo" type="button" role="tab" aria-selected="false">Subneteo VLAN (VLSM / FLSM)</button>
                         </li>
                     </ul>
                 </div>
@@ -73,6 +76,94 @@
                             </form>
                             <div id="resultadoSustitucion" class="mt-4"></div>
                         </div>
+
+                        <!-- Opción 3: Subneteo de VLANs (VLSM / FLSM) -->
+                        <div class="tab-pane fade" id="subneteo" role="tabpanel">
+                            <div class="row g-2 mb-3">
+                                <div class="col-12 col-md-5">
+                                    <label for="subRedBase" class="form-label fw-bold text-secondary">Red base a subnetear:</label>
+                                    <input type="text" class="form-control font-monospace" id="subRedBase" placeholder="Ej. 192.168.10.0" autocomplete="off">
+                                </div>
+                                <div class="col-6 col-md-3">
+                                    <label for="subCidrBase" class="form-label fw-bold text-secondary">Bits de red (CIDR):</label>
+                                    <div class="input-group">
+                                        <span class="input-group-text">/</span>
+                                        <input type="number" class="form-control font-monospace" id="subCidrBase" placeholder="24" min="0" max="32">
+                                    </div>
+                                </div>
+                                <div class="col-6 col-md-4">
+                                    <label for="subMetodo" class="form-label fw-bold text-secondary">Método:</label>
+                                    <select id="subMetodo" class="form-select font-monospace">
+                                        <option value="vlsm">VLSM (tamaño según hosts)</option>
+                                        <option value="flsm">FLSM (subredes del mismo tamaño)</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            
+
+                            <div class="bg-light border rounded p-3 mb-3">
+                                <h6 class="fw-bold text-primary mb-1">Agregar subredes <span class="badge bg-primary ms-1" style="font-size: 0.7rem;">v2 · Red / Sitio</span></h6>
+                               
+                                <div class="row g-2 align-items-end">
+                                    <div class="col-12 col-md-3">
+                                        <label for="subSitio" class="form-label fw-bold text-secondary mb-1" style="font-size: 0.85rem;">Red / Sitio:</label>
+                                        <input type="text" id="subSitio" class="form-control form-control-sm font-monospace" placeholder="Ej. RED1, RED3" autocomplete="off">
+                                    </div>
+                                    <div class="col-4 col-md-2">
+                                        <label for="subVlanId" class="form-label fw-bold text-secondary mb-1" style="font-size: 0.85rem;">VLAN ID (opcional):</label>
+                                        <input type="number" id="subVlanId" class="form-control form-control-sm font-monospace" placeholder="Vacío = sin VLAN" min="1" max="4094" title="Déjalo vacío para redes principales (ej. RED6) o seriales">
+                                    </div>
+                                    <div class="col-8 col-md-3">
+                                        <label for="subNombre" class="form-label fw-bold text-secondary mb-1" style="font-size: 0.85rem;">Nombre:</label>
+                                        <input type="text" id="subNombre" class="form-control form-control-sm" placeholder="Ej. Ventas" autocomplete="off">
+                                    </div>
+                                    <div class="col-4 col-md-2">
+                                        <label for="subHosts" class="form-label fw-bold text-secondary mb-1" style="font-size: 0.85rem;">Hosts c/u:</label>
+                                        <input type="number" id="subHosts" class="form-control form-control-sm font-monospace" placeholder="100" min="0">
+                                    </div>
+                                    <div class="col-4 col-md-1">
+                                        <label for="subCantidad" class="form-label fw-bold text-secondary mb-1" style="font-size: 0.85rem;">Cant.:</label>
+                                        <input type="number" id="subCantidad" class="form-control form-control-sm font-monospace" value="1" min="1" max="256">
+                                    </div>
+                                    <div class="col-4 col-md-1">
+                                        <button class="btn btn-success btn-sm w-100 fw-bold" type="button" id="btnSubAgregarFila">+</button>
+                                    </div>
+                                </div>
+                                <div class="row g-2 align-items-end mt-2 pt-2 border-top">
+                                    <div class="col-6 col-md-3">
+                                        <label for="subSerialesCant" class="form-label fw-bold text-secondary mb-1" style="font-size: 0.85rem;">Enlaces seriales (router-router):</label>
+                                        <input type="number" id="subSerialesCant" class="form-control form-control-sm font-monospace" value="3" min="1" max="64">
+                                    </div>
+                                    <div class="col-6 col-md-3">
+                                        <button class="btn btn-outline-success btn-sm w-100 fw-bold" type="button" id="btnSubAgregarSeriales">+ Agregar seriales (/30)</button>
+                                    </div>
+                                </div>
+                                <small id="subAyudaMetodo" class="text-muted d-block mt-2" style="font-size: 0.78rem;">VLSM: cada subred recibe el bloque más chico que alcance para sus hosts (se asignan de mayor a menor).</small>
+                            </div>
+
+                            <div class="table-responsive border rounded mb-3">
+                                <table class="table table-sm align-middle mb-0 text-center tabla-subneteo" style="font-size: 0.85rem;">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>#</th>
+                                            <th>Red / Sitio</th>
+                                            <th>VLAN ID</th>
+                                            <th>Nombre</th>
+                                            <th>Hosts requeridos</th>
+                                            <th></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="subFilasBody"></tbody>
+                                </table>
+                            </div>
+
+                            <div class="d-flex gap-2">
+                                <button type="button" class="btn btn-primary fw-bold flex-grow-1" id="btnSubCalcular">Calcular Subneteo</button>
+                                <button type="button" class="btn btn-outline-danger fw-bold" id="btnSubLimpiarFilas">Limpiar filas</button>
+                            </div>
+                            <div id="resultadoSubneteo" class="mt-4"></div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -96,6 +187,7 @@
                             <thead class="table-light">
                                 <tr>
                                     <th>VLAN ID</th>
+                                    <th>Red / Sitio</th>
                                     <th>Cliente / Nombre VLAN</th>
                                     <th>Dirección de Red</th>
                                     <th>Máscara</th>
@@ -111,6 +203,277 @@
                                 <!-- Filas generadas dinámicamente -->
                             </tbody>
                         </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- CONFIGURACIÓN COMPLETA DEL SWITCH (TODAS LAS VLANs) -->
+    <div class="row justify-content-center mt-4" id="seccionSwitchGlobal" style="display: none;">
+        <div class="col-md-11">
+            <div class="card shadow-sm border-0 border-top border-info border-3">
+                <div class="card-header bg-white fw-bold d-flex justify-content-between align-items-center">
+                    <span class="fs-5 text-dark">🧩 Configuración Completa del Switch (por Red / Sitio)</span>
+                    <button class="btn btn-sm btn-outline-info text-dark fw-bold" type="button" id="btnToggleSwitchGlobal">Ocultar</button>
+                </div>
+                <div class="card-body" id="cuerpoSwitchGlobal">
+                    <div class="row g-2 align-items-end mb-3">
+                        <div class="col-md-4">
+                            <label for="swgSitio" class="form-label fw-bold text-primary mb-1">Switch de la red:</label>
+                            <select id="swgSitio" class="form-select form-select-sm border-primary font-monospace fw-bold"></select>
+                        </div>
+                        <div class="col-md-8">
+                            <small class="text-muted d-block" style="font-size: 0.8rem;">Cada red (RED1, RED3…) tiene su propio switch, con su propia configuración guardada. Las redes sin VLAN (seriales, servidores) no aparecen aquí.</small>
+                        </div>
+                    </div>
+                    <div class="alert alert-info py-2 small mb-3">
+                        Las VLANs salen de la tabla de Nodos de la red elegida. Si varias subredes de esa red usan el <strong>mismo VLAN ID</strong>, el switch crea <strong>una sola VLAN</strong>. Los puertos aceptan listas y rangos: <code>fa0/1-12, fa0/20</code>.
+                    </div>
+
+                    <!-- Generales -->
+                    <div class="row g-2 align-items-end mb-3">
+                        <div class="col-md-4">
+                            <label for="swgHostname" class="form-label fw-bold text-secondary mb-1" style="font-size: 0.85rem;">Hostname (Opcional):</label>
+                            <input type="text" id="swgHostname" data-swg="hostname" class="form-control form-control-sm border-info font-monospace" placeholder="Ej. SW-PISO1" autocomplete="off">
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="swgMulticapa" data-swg="multicapa">
+                                <label class="form-check-label small fw-bold text-secondary" for="swgMulticapa">Switch multicapa (3560): agregar <code>encapsulation dot1q</code> en troncales</label>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="swgPortfast" data-swg="portfast">
+                                <label class="form-check-label small fw-bold text-secondary" for="swgPortfast"><code>spanning-tree portfast</code> en puertos de acceso</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- VLANs y puertos de acceso -->
+                    <h6 class="fw-bold text-dark mb-2">VLANs y puertos de acceso</h6>
+                    <div class="table-responsive border rounded mb-3">
+                        <table class="table table-sm align-middle mb-0 text-center" style="font-size: 0.85rem;">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Incluir</th>
+                                    <th>VLAN ID</th>
+                                    <th>Nombre en el switch</th>
+                                    <th>Subredes</th>
+                                    <th>Puertos de acceso</th>
+                                </tr>
+                            </thead>
+                            <tbody id="swgVlansBody"></tbody>
+                        </table>
+                    </div>
+
+                    <!-- Troncales -->
+                    <h6 class="fw-bold text-dark mb-2">Puertos troncales (hacia router u otro switch)</h6>
+                    <div class="row g-2 align-items-end mb-3">
+                        <div class="col-md-4">
+                            <label for="swgTrunk" class="form-label fw-bold text-secondary mb-1" style="font-size: 0.85rem;">Puertos troncales:</label>
+                            <input type="text" id="swgTrunk" data-swg="trunk" class="form-control form-control-sm border-info font-monospace" placeholder="Ej. g0/1, fa0/24" autocomplete="off">
+                        </div>
+                        <div class="col-md-3">
+                            <label for="swgNativa" class="form-label fw-bold text-secondary mb-1" style="font-size: 0.85rem;">VLAN nativa (Opcional):</label>
+                            <input type="number" id="swgNativa" data-swg="nativa" class="form-control form-control-sm border-info font-monospace" placeholder="Ej. 99" min="1" max="4094">
+                        </div>
+                        <div class="col-md-5">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="swgAllowed" data-swg="allowed">
+                                <label class="form-check-label small fw-bold text-secondary" for="swgAllowed">Limitar <code>allowed vlan</code> a las VLANs incluidas (+ nativa y gestión)</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Gestión -->
+                    <h6 class="fw-bold text-dark mb-2">Gestión remota del switch (SVI) — Opcional</h6>
+                    <div class="row g-2 mb-3">
+                        <div class="col-md-3">
+                            <label for="swgMgmtVlan" class="form-label fw-bold text-secondary mb-1" style="font-size: 0.85rem;">VLAN de gestión:</label>
+                            <input type="number" id="swgMgmtVlan" data-swg="mgmtVlan" class="form-control form-control-sm border-info font-monospace" placeholder="Ej. 99" min="1" max="4094">
+                        </div>
+                        <div class="col-md-3">
+                            <label for="swgMgmtIp" class="form-label fw-bold text-secondary mb-1" style="font-size: 0.85rem;">IP del switch:</label>
+                            <input type="text" id="swgMgmtIp" data-swg="mgmtIp" class="form-control form-control-sm border-info font-monospace" placeholder="Ej. 192.168.99.2" autocomplete="off">
+                        </div>
+                        <div class="col-md-3">
+                            <label for="swgMgmtMask" class="form-label fw-bold text-secondary mb-1" style="font-size: 0.85rem;">Máscara:</label>
+                            <input type="text" id="swgMgmtMask" data-swg="mgmtMask" class="form-control form-control-sm border-info font-monospace" placeholder="Ej. 255.255.255.0" autocomplete="off">
+                        </div>
+                        <div class="col-md-3">
+                            <label for="swgMgmtGw" class="form-label fw-bold text-secondary mb-1" style="font-size: 0.85rem;">Default gateway:</label>
+                            <input type="text" id="swgMgmtGw" data-swg="mgmtGw" class="form-control form-control-sm border-info font-monospace" placeholder="Ej. 192.168.99.1" autocomplete="off">
+                        </div>
+                    </div>
+
+                    <!-- Seguridad -->
+                    <h6 class="fw-bold text-dark mb-2">Seguridad básica — Opcional</h6>
+                    <div class="row g-2 align-items-end mb-3">
+                        <div class="col-md-3">
+                            <label for="swgEnable" class="form-label fw-bold text-secondary mb-1" style="font-size: 0.85rem;">Enable secret:</label>
+                            <input type="text" id="swgEnable" data-swg="enable" class="form-control form-control-sm border-info font-monospace" placeholder="Ej. class" autocomplete="off">
+                        </div>
+                        <div class="col-md-3">
+                            <label for="swgConsola" class="form-label fw-bold text-secondary mb-1" style="font-size: 0.85rem;">Password consola:</label>
+                            <input type="text" id="swgConsola" data-swg="consola" class="form-control form-control-sm border-info font-monospace" placeholder="Ej. cisco" autocomplete="off">
+                        </div>
+                        <div class="col-md-3">
+                            <label for="swgVty" class="form-label fw-bold text-secondary mb-1" style="font-size: 0.85rem;">Password VTY (telnet):</label>
+                            <input type="text" id="swgVty" data-swg="vty" class="form-control form-control-sm border-info font-monospace" placeholder="Ej. cisco" autocomplete="off">
+                        </div>
+                        <div class="col-md-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="swgEncrypt" data-swg="encrypt">
+                                <label class="form-check-label small fw-bold text-secondary" for="swgEncrypt"><code>service password-encryption</code></label>
+                            </div>
+                        </div>
+                        <div class="col-12">
+                            <label for="swgBanner" class="form-label fw-bold text-secondary mb-1" style="font-size: 0.85rem;">Banner MOTD:</label>
+                            <input type="text" id="swgBanner" data-swg="banner" class="form-control form-control-sm border-info" placeholder="Ej. Acceso solo personal autorizado" autocomplete="off">
+                        </div>
+                    </div>
+
+                    <button class="btn btn-info w-100 fw-bold shadow-sm text-dark mb-3" type="button" id="btnGenerarSwitchGlobal">⚙️ Generar Script Completo del Switch</button>
+
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h6 class="fw-bold text-dark mb-0">Script CLI del Switch</h6>
+                        <button class="btn btn-sm btn-outline-secondary fw-bold" type="button" id="btnCopiarSwitchGlobal">📋 Copiar Todo</button>
+                    </div>
+                    <pre id="terminalSwitchGlobal" class="p-3 bg-dark text-info font-monospace rounded shadow-sm m-0 border border-info" style="min-height: 200px; font-size: 0.85rem; white-space: pre-wrap;">Llena los puertos y haz clic en "Generar Script Completo del Switch".</pre>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- CONFIGURACIÓN DE ROUTERS (TOPOLOGÍA + RUTAS ESTÁTICAS) -->
+    <div class="row justify-content-center mt-4" id="seccionRouters" style="display: none;">
+        <div class="col-md-11">
+            <div class="card shadow-sm border-0 border-top border-success border-3">
+                <div class="card-header bg-white fw-bold d-flex justify-content-between align-items-center">
+                    <span class="fs-5 text-success">🛰️ Configuración de Routers (topología + OSPF / estático)</span>
+                    <button class="btn btn-sm btn-outline-success fw-bold" type="button" id="btnToggleRouters">Ocultar</button>
+                </div>
+                <div class="card-body" id="cuerpoRouters">
+                    <div class="row g-2 align-items-end mb-3">
+                        <div class="col-md-4">
+                            <label for="rtSel" class="form-label fw-bold text-success mb-1">Router:</label>
+                            <select id="rtSel" class="form-select form-select-sm border-success font-monospace fw-bold"></select>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="rtNuevoNombre" class="form-label fw-bold text-secondary mb-1" style="font-size: 0.85rem;">Nuevo router:</label>
+                            <div class="input-group input-group-sm">
+                                <input type="text" id="rtNuevoNombre" class="form-control font-monospace border-success" placeholder="Ej. R0" autocomplete="off">
+                                <button class="btn btn-success fw-bold" type="button" id="btnRtAgregar">+ Agregar</button>
+                            </div>
+                        </div>
+                        <div class="col-md-4 text-md-end">
+                            <button class="btn btn-sm btn-outline-danger fw-bold" type="button" id="btnRtEliminar">🗑️ Eliminar router</button>
+                        </div>
+                    </div>
+
+                    <div id="rtSinRouters" class="alert alert-light border text-muted small py-2">Agrega tus routers con el nombre que tienen en tu diagrama (ej. <code>R0</code>, <code>R1</code>, <code>R2</code>).</div>
+
+                    <div id="rtPanel" style="display: none;">
+                        <div class="alert alert-info py-2 small mb-3">
+                            1) En <strong>Redes LAN</strong> escribe por qué puerto del router llega cada red (ej. <code>g0/0</code>). 2) En <strong>Enlaces seriales</strong> escribe el puerto serial de este router (ej. <code>s0/0/0</code>) y marca DCE si lleva el reloj. Repite en cada router. El gateway de cada red es el <strong>último host</strong>. OSPF anuncia automáticamente todas las redes que escribiste en este router.
+                        </div>
+
+                        <div class="row g-2 align-items-end mb-3">
+                            <div class="col-md-3">
+                                <label for="rtHostname" class="form-label fw-bold text-secondary mb-1" style="font-size: 0.85rem;">Hostname:</label>
+                                <input type="text" id="rtHostname" data-rt="hostname" class="form-control form-control-sm border-success font-monospace" placeholder="Ej. R0" autocomplete="off">
+                            </div>
+                            <div class="col-md-2">
+                                <label for="rtClock" class="form-label fw-bold text-secondary mb-1" style="font-size: 0.85rem;">Clock rate (DCE):</label>
+                                <input type="number" id="rtClock" data-rt="clock" class="form-control form-control-sm border-success font-monospace" placeholder="64000">
+                            </div>
+                            <div class="col-md-3">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="rtDhcp" data-rt="dhcp">
+                                    <label class="form-check-label small fw-bold text-secondary" for="rtDhcp">DHCP en este router para sus LANs</label>
+                                </div>
+                            </div>
+                            <div class="col-md-2">
+                                <label for="rtDns" class="form-label fw-bold text-secondary mb-1" style="font-size: 0.85rem;">DNS (DHCP, opc.):</label>
+                                <input type="text" id="rtDns" data-rt="dns" class="form-control form-control-sm border-success font-monospace" placeholder="Ej. 133.34.128.2" autocomplete="off">
+                            </div>
+                            <div class="col-md-2">
+                                <label for="rtHelper" class="form-label fw-bold text-secondary mb-1" style="font-size: 0.85rem;">ip helper-address (opc.):</label>
+                                <input type="text" id="rtHelper" data-rt="helper" class="form-control form-control-sm border-success font-monospace" placeholder="IP del servidor DHCP" autocomplete="off">
+                            </div>
+                        </div>
+
+                        <div class="row g-2 align-items-end mb-3 bg-light border rounded p-2 mx-0">
+                            <div class="col-md-3">
+                                <label for="rtEnrutamiento" class="form-label fw-bold text-success mb-1" style="font-size: 0.85rem;">Protocolo de enrutamiento:</label>
+                                <select id="rtEnrutamiento" data-rt="enrutamiento" class="form-select form-select-sm border-success font-monospace fw-bold">
+                                    <option value="ospf">OSPF</option>
+                                    <option value="estatico">Estático (rutas automáticas)</option>
+                                    <option value="ninguno">Ninguno</option>
+                                </select>
+                            </div>
+                            <div class="col-md-9" id="rtOspfCampos">
+                                <div class="row g-2 align-items-end">
+                                    <div class="col-md-3">
+                                        <label for="rtOspfPid" class="form-label fw-bold text-secondary mb-1" style="font-size: 0.85rem;">ID de proceso:</label>
+                                        <input type="number" id="rtOspfPid" data-rt="ospfPid" class="form-control form-control-sm border-success font-monospace" placeholder="1" min="1" max="65535">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label for="rtOspfArea" class="form-label fw-bold text-secondary mb-1" style="font-size: 0.85rem;">Área:</label>
+                                        <input type="number" id="rtOspfArea" data-rt="ospfArea" class="form-control form-control-sm border-success font-monospace" placeholder="0" min="0">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="rtOspfPasivas" data-rt="ospfPasivas">
+                                            <label class="form-check-label small fw-bold text-secondary" for="rtOspfPasivas"><code>passive-interface</code> en puertos LAN (no manda OSPF hacia las PCs)</label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <h6 class="fw-bold text-dark mb-2">Redes LAN</h6>
+                        <div class="table-responsive border rounded mb-3">
+                            <table class="table table-sm align-middle mb-0 text-center" style="font-size: 0.85rem;">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Red / Sitio</th>
+                                        <th>Subredes y gateway</th>
+                                        <th>Puerto de este router</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="rtLansBody"></tbody>
+                            </table>
+                        </div>
+
+                        <h6 class="fw-bold text-dark mb-2">Enlaces seriales (router-router)</h6>
+                        <div class="table-responsive border rounded mb-3">
+                            <table class="table table-sm align-middle mb-0 text-center" style="font-size: 0.85rem;">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Enlace</th>
+                                        <th>Red</th>
+                                        <th>Puerto de este router</th>
+                                        <th>IP que le toca</th>
+                                        <th>DCE (clock)</th>
+                                        <th>Otro extremo</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="rtEnlacesBody"></tbody>
+                            </table>
+                        </div>
+
+                        <div id="rtAvisos" class="mb-3"></div>
+
+                        <button class="btn btn-success w-100 fw-bold shadow-sm mb-3" type="button" id="btnRtGenerar">⚙️ Generar Script de este Router</button>
+
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h6 class="fw-bold text-success mb-0">Script CLI del Router</h6>
+                            <button class="btn btn-sm btn-outline-secondary fw-bold" type="button" id="btnRtCopiar">📋 Copiar Todo</button>
+                        </div>
+                        <pre id="terminalRouters" class="p-3 bg-dark text-success font-monospace rounded shadow-sm m-0 border border-success" style="min-height: 200px; font-size: 0.85rem; white-space: pre-wrap;">Asigna puertos y haz clic en "Generar Script de este Router".</pre>
                     </div>
                 </div>
             </div>
